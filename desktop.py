@@ -16,10 +16,11 @@ import time
 import urllib.request
 import webbrowser
 
-BASE = Path(__file__).resolve().parent
+from runtime_paths import BASE, RESOURCES, FROZEN, desktop_command, server_command, child_environment
 sys.path.insert(0,str(BASE / 'vendor'))
 from desktop_client import DesktopQueue, LocalAPI
 from desktop_receiver import DesktopReceiver
+from desktop_pages import DesktopPages
 
 PORT = 8788
 STATE = BASE / '.dropagil'
@@ -43,7 +44,7 @@ def ensure_server():
     except Exception:
         pass
     log = (BASE / 'server.log').open('ab')
-    subprocess.Popen([PYTHONW,str(BASE / 'server.py')],cwd=BASE,stdin=subprocess.DEVNULL,stdout=log,stderr=log,creationflags=CREATE_NO_WINDOW)
+    subprocess.Popen(server_command(),cwd=BASE,env=child_environment(),stdin=subprocess.DEVNULL,stdout=log,stderr=log,creationflags=CREATE_NO_WINDOW)
     log.close()
     for _ in range(40):
         try:
@@ -57,41 +58,39 @@ def ensure_server():
 def install(remove=False):
     import winreg
     STATE.mkdir(exist_ok=True)
-    command = subprocess.list2cmdline([PYTHONW,str(BASE / 'desktop.py'),'--background'])
+    command = subprocess.list2cmdline(desktop_command('--background'))
     run = r'Software\Microsoft\Windows\CurrentVersion\Run'
-    roots = [r'Software\Classes\*\shell\DropAgil',r'Software\Classes\Directory\shell\DropAgil']
-    if remove:
-        with winreg.CreateKey(winreg.HKEY_CURRENT_USER,run) as key:
+    parents = [r'Software\Classes\*\shell',r'Software\Classes\Directory\shell']
+    # Remove only our exact keys, including the old single-choice entry.
+    for parent in parents:
+        for suffix in ('DropAgil','DropAgilNetwork','DropAgilDevice'):
+            keypath=parent+'\\'+suffix
             try:
-                value,_ = winreg.QueryValueEx(key,'DropAgil')
-                if str(BASE / 'desktop.py') in value:
-                    winreg.DeleteValue(key,'DropAgil')
-            except FileNotFoundError:
-                pass
-        for root in roots:
-            try:
-                with winreg.OpenKey(winreg.HKEY_CURRENT_USER,root + r'\command') as key:
-                    value,_ = winreg.QueryValueEx(key,'')
-                if str(BASE / 'desktop.py') not in value:
-                    continue
-                winreg.DeleteKey(winreg.HKEY_CURRENT_USER,root + r'\command')
-                winreg.DeleteKey(winreg.HKEY_CURRENT_USER,root)
-            except FileNotFoundError:
-                pass
-        print('Início automático e menu do DropAgíl removidos. Arquivos mantidos.')
-        return
+                with winreg.OpenKey(winreg.HKEY_CURRENT_USER,keypath+r'\command') as key:
+                    value,_=winreg.QueryValueEx(key,'')
+                if str(BASE / 'desktop.py') not in value and str(BASE / 'DropAgil.exe') not in value:continue
+                winreg.DeleteKey(winreg.HKEY_CURRENT_USER,keypath+r'\command')
+                winreg.DeleteKey(winreg.HKEY_CURRENT_USER,keypath)
+            except FileNotFoundError:pass
     with winreg.CreateKey(winreg.HKEY_CURRENT_USER,run) as key:
-        winreg.SetValueEx(key,'DropAgil',0,winreg.REG_SZ,command)
-    for root in roots:
-        with winreg.CreateKey(winreg.HKEY_CURRENT_USER,root) as key:
-            winreg.SetValueEx(key,'',0,winreg.REG_SZ,'Enviar via DropAgíl')
-            winreg.SetValueEx(key,'Icon',0,winreg.REG_SZ,str(BASE / 'public' / 'dropagil.ico'))
-            winreg.SetValueEx(key,'MultiSelectModel',0,winreg.REG_SZ,'Player')
-        with winreg.CreateKey(winreg.HKEY_CURRENT_USER,root + r'\command') as key:
-            value = subprocess.list2cmdline([PYTHONW,str(BASE / 'desktop.py'),'--send']) + ' "%1"'
-            winreg.SetValueEx(key,'',0,winreg.REG_SZ,value)
+        if remove:
+            try:
+                value,_=winreg.QueryValueEx(key,'DropAgil')
+                if str(BASE / 'desktop.py') in value or str(BASE / 'DropAgil.exe') in value:winreg.DeleteValue(key,'DropAgil')
+            except FileNotFoundError:pass
+        else:winreg.SetValueEx(key,'DropAgil',0,winreg.REG_SZ,command)
+    if not remove:
+        for parent in parents:
+            for suffix,label,flag in [('DropAgilNetwork','DropAgíl — Enviar para a rede','--send-network'),('DropAgilDevice','DropAgíl — Enviar para dispositivo…','--send-device')]:
+                keypath=parent+'\\'+suffix
+                with winreg.CreateKey(winreg.HKEY_CURRENT_USER,keypath) as key:
+                    winreg.SetValueEx(key,'',0,winreg.REG_SZ,label)
+                    winreg.SetValueEx(key,'Icon',0,winreg.REG_SZ,str(Path(__file__).resolve().parent/'public/dropagil.ico') if not FROZEN else sys.executable)
+                    winreg.SetValueEx(key,'MultiSelectModel',0,winreg.REG_SZ,'Player')
+                with winreg.CreateKey(winreg.HKEY_CURRENT_USER,keypath+r'\command') as key:
+                    winreg.SetValueEx(key,'',0,winreg.REG_SZ,subprocess.list2cmdline(desktop_command(flag))+' "%1"')
     ctypes.windll.shell32.SHChangeNotify(0x08000000,0,None,None)
-    print('DropAgíl configurado para iniciar ao entrar no Windows. Menu de contexto instalado para arquivos e pastas.')
+
 
 
 def run_desktop(background=False):
@@ -124,10 +123,10 @@ def run_desktop(background=False):
                 size = int(self.headers.get('Content-Length','0'))
                 if size < 0 or size > 256*1024: raise ValueError()
                 data = json.loads(self.rfile.read(size))
-                if self.path == '/send':
+                if self.path in ('/send','/send-network','/send-device'):
                     paths = data.get('paths',[])
                     if not isinstance(paths,list) or not all(isinstance(p,str) for p in paths): raise ValueError()
-                    events.put(('send',paths))
+                    events.put((self.path[1:],paths))
                 elif self.path in ('/show','/files','/choose-files','/choose-folder','/exit'):
                     events.put(self.path[1:])
                 elif self.path in ('/cancel','/pause','/resume'):
@@ -141,10 +140,10 @@ def run_desktop(background=False):
     bridge = ThreadingHTTPServer(('127.0.0.1',PORT),IPCHandler)
     threading.Thread(target=bridge.serve_forever,daemon=True).start()
     root = tk.Tk()
-    root.title('DropAgíl • Central de transferências')
-    root.geometry(f'660x590+{max(0,root.winfo_screenwidth()-685)}+{max(0,root.winfo_screenheight()-680)}')
+    root.title('DropAgíl — Desktop')
+    root.geometry('980x740')
     root.configure(bg='#f5f7f2')
-    root.minsize(620,550)
+    root.minsize(800,640)
     root.protocol('WM_DELETE_WINDOW',root.withdraw)
     style = ttk.Style(root)
     style.theme_use('clam')
@@ -165,7 +164,10 @@ def run_desktop(background=False):
     tk.Label(labels,text='DropAgíl',font=('Segoe UI',21,'bold'),fg='white',bg='#173f35').pack(anchor='w')
     tk.Label(labels,text='Seus arquivos. Sua rede.',font=('Segoe UI',10),fg='#ddf5b0',bg='#173f35').pack(anchor='w')
     ttk.Button(brand,text='Abrir página ↗',command=lambda:webbrowser.open('http://localhost:8787/')).pack(side='right')
-    frame = ttk.Frame(root,padding=(24,18)); frame.pack(fill='both',expand=True)
+    style.configure('TNotebook',background='#f5f7f2',borderwidth=0)
+    style.configure('TNotebook.Tab',font=('Segoe UI',11),padding=(22,12))
+    tabs=ttk.Notebook(root);tabs.pack(fill='both',expand=True,padx=16,pady=16)
+    frame=ttk.Frame(tabs,padding=(24,18));tabs.add(frame,text='Transferências')
     heading = ttk.Label(frame,text='Tudo pronto para enviar',font=('Segoe UI',16,'bold')); heading.pack(anchor='w')
     subtitle = ttk.Label(frame,text='Escolha arquivos ou use o botão direito no Explorador.',wraplength=590); subtitle.pack(anchor='w',pady=(5,12))
     progress = ttk.Progressbar(frame,maximum=100); progress.pack(fill='x')
@@ -185,14 +187,29 @@ def run_desktop(background=False):
     ttk.Button(destination_row,text='Atualizar',command=refresh_destinations).pack(side='right',padx=(6,0))
     def enqueue(paths):
         jobs.add(paths,target=destination_ids[max(0,destination.current())]);root.deiconify()
+    shell_paths=[]
+    shell_timer=None
+    def queue_device_share(paths):
+        nonlocal shell_timer
+        shell_paths.extend(paths)
+        if shell_timer is not None:root.after_cancel(shell_timer)
+        def open_choice():
+            nonlocal shell_timer
+            chosen=list(dict.fromkeys(shell_paths));shell_paths.clear();shell_timer=None
+            share_prompt(chosen)
+        shell_timer=root.after(350,open_choice)
     def share_prompt(paths):
         refresh_destinations()
         popup=tk.Toplevel(root);popup.title('Enviar com DropAgíl');popup.configure(bg='#f5f7f2');popup.transient(root)
         panel=ttk.Frame(popup,padding=22);panel.pack(fill='both',expand=True)
         ttk.Label(panel,text='Enviar para…',font=('Segoe UI',16,'bold')).pack(anchor='w')
         ttk.Label(panel,text=f'{len(paths)} item(ns) selecionado(s)').pack(anchor='w',pady=8)
-        select=ttk.Combobox(panel,state='readonly',values=list(destination['values']),width=42);select.current(0);select.pack(fill='x',pady=10)
-        choices=list(destination_ids)
+        choices=list(destination_ids[1:])
+        if not choices:
+            ttk.Label(panel,text='Nenhum dispositivo disponível. Abra o DropAgíl no celular.').pack(pady=12)
+            ttk.Button(panel,text='Tentar novamente',command=lambda:(popup.destroy(),share_prompt(paths))).pack()
+            return
+        select=ttk.Combobox(panel,state='readonly',values=list(destination['values'])[1:],width=42);select.current(0);select.pack(fill='x',pady=10)
         def send(): jobs.add(paths,target=choices[max(0,select.current())]);popup.destroy()
         ttk.Button(panel,text='Enviar',style='Primary.TButton',command=send).pack(side='right')
         ttk.Button(panel,text='Cancelar',command=popup.destroy).pack(side='right',padx=6)
@@ -218,13 +235,14 @@ def run_desktop(background=False):
     ttk.Button(actions,text='Retomar',command=lambda:jobs.control('resume')).pack(side='left',padx=4)
     footer = ttk.Frame(frame); footer.pack(fill='x',pady=(8,0))
     ttk.Button(footer,text='Cancelar tudo',style='Danger.TButton',command=lambda:jobs.control('cancel')).pack(side='left')
-    ttk.Button(footer,text='Arquivos da rede',command=lambda:webbrowser.open('http://localhost:8787/#files')).pack(side='left',padx=6)
+    ttk.Button(footer,text='Arquivos da rede',command=lambda:pages.show(pages.files)).pack(side='left',padx=6)
     ttk.Button(footer,text='Esconder',command=root.withdraw).pack(side='right')
+    pages=DesktopPages(root,tabs,LocalAPI(),events,install,BASE/'Recebidos')
     image = Image.new('RGBA',(64,64),'#173f35'); draw = ImageDraw.Draw(image)
     draw.rounded_rectangle((3,3,60,60),radius=14,fill='#173f35')
     draw.ellipse((14,22,44,51),outline='#ddf5b0',width=7);draw.line((41,12,41,47),fill='#ddf5b0',width=7)
-    image.save(BASE / 'public' / 'dropagil.ico',sizes=[(16,16),(32,32),(64,64)])
-    root.iconbitmap(str(BASE / 'public' / 'dropagil.ico'))
+    image.save(STATE / 'dropagil.ico',sizes=[(16,16),(32,32),(64,64)])
+    root.iconbitmap(str(STATE / 'dropagil.ico'))
     def event(name): return lambda *_:events.put(name)
     tray = pystray.Icon('DropAgil',image,'DropAgíl — central de arquivos',pystray.Menu(
         pystray.MenuItem('Transferências',event('show'),default=True),
@@ -245,7 +263,9 @@ def run_desktop(background=False):
                 name = events.get_nowait()
                 if isinstance(name,tuple):
                     kind,payload=name
-                    if kind=='send': root.deiconify();root.lift();share_prompt(payload)
+                    if kind=='ui': payload()
+                    elif kind=='send-network': jobs.add(payload,target='');root.deiconify();tabs.select(frame)
+                    elif kind in ('send','send-device'): root.deiconify();root.lift();queue_device_share(payload)
                     elif kind=='incoming':
                         tray.notify(f'{len(payload)} arquivo(s) aguardando sua confirmação.','Receber arquivos?')
                         names='\n'.join(item['path'] for item in payload[:5])
@@ -258,12 +278,13 @@ def run_desktop(background=False):
                 elif name == 'choose-files': choose_files()
                 elif name == 'choose-folder': choose_folder()
                 elif name == 'page': webbrowser.open('http://localhost:8787/')
-                elif name == 'files': webbrowser.open('http://localhost:8787/#files')
-                elif name == 'connect': webbrowser.open('http://localhost:8787/#connect')
+                elif name == 'files': root.deiconify();pages.show(pages.files)
+                elif name == 'connect': root.deiconify();pages.show(pages.connection)
                 elif name == 'received': os.startfile(BASE / 'Recebidos')
                 elif name == 'exit':
-                    receiver.close(); jobs.control('pause'); jobs.close(); bridge.shutdown(); tray.stop(); root.destroy(); return
+                    pages.close(); receiver.close(); jobs.control('pause'); jobs.close(); bridge.shutdown(); tray.stop(); root.destroy(); return
         except queue.Empty: pass
+        jobs.prune_finished()
         snapshot = jobs.snapshot()
         shown = [j for j in snapshot if j['state'] != 'cancelled']
         active = [j for j in shown if j['state'] not in ('done','cancelled')]
@@ -302,23 +323,30 @@ def run_desktop(background=False):
 
 
 def main():
+    if '--server' in sys.argv:
+        from server import main as serve
+        serve([arg for arg in sys.argv[1:] if arg != '--server']);return
     parser = argparse.ArgumentParser()
     parser.add_argument('--background',action='store_true')
     parser.add_argument('--send',nargs='+')
+    parser.add_argument('--send-network',nargs='+')
+    parser.add_argument('--send-device',nargs='+')
     parser.add_argument('--install',action='store_true')
     parser.add_argument('--uninstall',action='store_true')
     args = parser.parse_args()
     if args.install or args.uninstall:
         install(args.uninstall)
         return
-    if args.send:
+    paths=args.send_network or args.send_device or args.send
+    action='send-network' if args.send_network else 'send-device'
+    if paths:
         try:
-            ipc('send',{'paths':args.send}); return
+            ipc(action,{'paths':paths}); return
         except Exception:
-            subprocess.Popen([PYTHONW,str(BASE / 'desktop.py'),'--background'],cwd=BASE,creationflags=CREATE_NO_WINDOW)
+            subprocess.Popen(desktop_command('--background'),cwd=BASE,env=child_environment(),creationflags=CREATE_NO_WINDOW)
             for _ in range(40):
                 try:
-                    ipc('send',{'paths':args.send}); return
+                    ipc(action,{'paths':paths}); return
                 except Exception: time.sleep(.25)
             raise RuntimeError('A central não iniciou. Abra Iniciar-DropAgil.bat.')
     run_desktop(args.background)

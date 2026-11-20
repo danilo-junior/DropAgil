@@ -8,3 +8,7 @@ __pycache__/
 vendor/
 *.apk
 *.keystore
+*.exe
+*.idsig
+dist/
+build/

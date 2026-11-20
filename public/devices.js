@@ -22,6 +22,21 @@ async function updateDestinations() {
   finally { destinationBusy = false; }
 }
 $('refreshDestinations').onclick = updateDestinations;
+const renameDevice = document.createElement('button');
+renameDevice.className = 'button secondary'; renameDevice.textContent = 'Renomear dispositivo';
+$('refreshDestinations').after(renameDevice);
+renameDevice.onclick = async () => {
+  try {
+    const result = await api('/api/devices');
+    const id = $('sendDestination').value || result.current?.id;
+    const device = [result.current, ...result.devices].find(d => d?.id === id);
+    if (!device) { toast('Escolha um dispositivo ou ative o recebimento nesta página.'); return; }
+    const name = prompt(`Novo nome para “${device.name}” (até 50 caracteres):`, device.name);
+    if (name === null) return;
+    await post(`/api/devices/${id}/rename`, {name});
+    toast('Nome atualizado em todos os dispositivos.'); await updateDestinations();
+  } catch(e) { toast(e.message); }
+};
 $('receiveHere').onclick = () => {
   receivingHere = !receivingHere;
   $('receiveHere').textContent = receivingHere ? 'Parar de receber nesta página' : 'Receber neste dispositivo';

@@ -2,13 +2,34 @@
 
 Arquivos e pastas entre computador e celular, pela rede local. Interface em português, sem conta e sem serviços externos. O computador funciona como central: envios para **Rede** ficam em `Recebidos`. Envios para um **dispositivo** aguardam o aceite do destinatário em uma área separada, sem aparecer na lista pública.
 
+## Versão 4 — aplicativo desktop
+
+- **DropAgil.exe**: aplicativo Windows independente, sem precisar instalar Python. Telas nativas de transferências, arquivos, dispositivos e conexão com QR Code. Para usar, extraia o pacote Windows em uma pasta gravável e abra o executável; mantenha essa pasta no mesmo lugar após configurar o início automático.
+- **Arquivos da rede** no desktop: navegação, busca, download em blocos com progresso, cancelamento e exclusão com confirmação. Pastas são baixadas em ZIP.
+- **Dois comandos no botão direito**, em arquivos e pastas: **DropAgíl — Enviar para a rede** inicia diretamente; **DropAgíl — Enviar para dispositivo…** abre somente a escolha dos aparelhos. No Windows 11, aparecem também em Mostrar mais opções. Atualize a integração em Conexão e ajustes ou execute Instalar-Windows.bat.
+- **Renomear dispositivos**: no desktop, aba Dispositivos; no Android, aba Conexão; na página, botão Renomear dispositivo. O nome fica salvo na central e é mostrado para toda a rede. Para renomear este navegador, deixe Rede selecionado e ative o recebimento.
+- **Limpeza da fila após 30 segundos** no Windows, Android e navegador. Somente linhas concluídas são retiradas; arquivos enviados, envios pausados e falhas são preservados.
+- **Recebimento Android ativado por padrão** para celulares pareados, depois de conceder notificações. Abre automaticamente ao iniciar o app, após atualização do APK e após reiniciar o Android quando permitido pelo sistema. Desativar manualmente é respeitado. Após fechamento forçado, abra o aplicativo novamente.
+- **Aceitar / Recusar no aviso compacto, expandido e flutuante**. Um toque na notificação abre uma confirmação com botões grandes. Android, configurações de notificação, tela bloqueada, Não Perturbe e regras do fabricante ainda controlam a exibição; o app não força tela cheia nem permissões de sobreposição.
+
+### Gerar os aplicativos
+
+```powershell
+python -m pip install -r requirements-build.txt
+python build_windows.py
+python android/tools/prepare_sdk.py
+python android/tools/build.py
+```
+
+O executável é gerado na raiz do projeto. Coloque o APK na mesma pasta para disponibilizá-lo pelo computador. Dados, chaves de assinatura, arquivos recebidos, caches e binários de build não entram no Git. Conserve a chave Android local para atualizar a instalação existente.
+
 ## Novidades da versão 3
 
 - Identidade visual compartilhada no Android e na central Windows, com botão **Abrir página** em ambos.
 - Android com abas Transferir, Arquivos e Conexão. Ao compartilhar pela galeria, uma pequena janela permite escolher o destino; o envio segue pela notificação, sem abrir a tela principal quando já estiver pareado e com notificações permitidas.
 - **Enviar para**: escolha Rede ou um dispositivo disponível. O servidor no computador intermedeia a transferência e precisa permanecer ligado.
-- No Android de destino, ative **Receber arquivos neste celular**. Toque **Aceitar** ou **Recusar** na notificação. Os downloads vão para `Downloads/DropAgil`, em subpastas por arquivo para evitar sobrescritas. O recebimento deve ser reativado após fechar à força/reiniciar o celular; não é iniciado no boot.
-- No Windows, a bandeja fica disponível para receber e pede confirmação antes de salvar em Downloads/DropAgil. O menu de contexto abre uma seleção rápida de destino.
+- No Android de destino, ative **Receber arquivos neste celular**. Toque **Aceitar** ou **Recusar** na notificação. Os downloads vão para `Downloads/DropAgil`, em subpastas por arquivo para evitar sobrescritas. Após fechar à força, abra o app novamente; o recebimento automático respeita as limitações do Android.
+- No Windows, a bandeja fica disponível para receber e pede confirmação antes de salvar em Downloads/DropAgil. Os dois comandos do menu de contexto separam o envio à rede do envio a um dispositivo.
 - No navegador, use **Receber neste dispositivo** e mantenha a página aberta. Aceite pelo cartão que aparecer. Depois do download, use **Limpar entrega**; o navegador não informa com segurança ao site quando o download terminou.
 - A cópia temporária de uma entrega direta é removida ao recusar ou após confirmação de download dos apps nativos. Entregas sem resposta permanecem no computador aguardando o destinatário.
 - **Apagar** arquivos/pastas pela página ou pelo Android, com confirmação de exclusão permanente. Apaga somente a cópia da rede. Pastas com uploads pendentes são protegidas; conclua ou cancele os uploads primeiro.

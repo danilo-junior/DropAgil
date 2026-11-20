@@ -25,6 +25,7 @@ public class ShareActivity extends Activity {
     }
     @Override protected void onPostResume() {
         super.onPostResume();
+        ReceiverStartup.start(this);
         if (dispatched) { finish(); return; }
         dispatched = true;
         Intent source = getIntent();

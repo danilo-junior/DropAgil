@@ -19,7 +19,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, quote, urlsplit
 import zipfile
 
-BASE = Path(__file__).resolve().parent
+from runtime_paths import BASE, RESOURCES
 CHUNK = 8 * 1024 * 1024
 
 
@@ -246,7 +246,7 @@ class Handler(BaseHTTPRequestHandler):
         route, query, method = url.path, parse_qs(url.query), self.command
         arg = lambda key, default='': query.get(key, [default])[0]
         if route in ('/', '/app.js', '/devices.js', '/transfer-groups.js', '/style.css', '/favicon.svg') and method in ('GET', 'HEAD'):
-            file = BASE / 'public' / ('index.html' if route == '/' else route[1:])
+            file = RESOURCES / 'public' / ('index.html' if route == '/' else route[1:])
             return self.reply(file.read_bytes(), content=mimetypes.guess_type(file.name)[0] or 'text/plain')
         if route == '/api/login' and method == 'POST':
             data = self.body()
@@ -272,9 +272,20 @@ class Handler(BaseHTTPRequestHandler):
                 if method == 'POST':
                     data = self.body()
                     name = str(data.get('name') or session['name'])[:50]
-                    db.execute('INSERT INTO devices VALUES (?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,seen=excluded.seen', (identity,name,time.time()))
+                    db.execute('INSERT INTO devices VALUES (?,?,?) ON CONFLICT(id) DO UPDATE SET seen=excluded.seen', (identity,name,time.time()))
                 devices = [dict(row) for row in db.execute('SELECT id,name FROM devices WHERE seen>? AND id!=?',(time.time()-40,identity))]
-            return self.reply({'id':identity,'devices':devices})
+                own = db.execute('SELECT id,name FROM devices WHERE id=?',(identity,)).fetchone()
+            return self.reply({'id':identity,'devices':devices,'current':dict(own) if own else None})
+        rename = re.fullmatch(r'/api/devices/([a-f0-9]{32})/rename',route)
+        if rename and method == 'POST':
+            name = self.body().get('name')
+            if not isinstance(name,str) or not name.strip() or len(name.strip())>50 or any(ord(c)<32 for c in name):
+                raise Problem('Use um nome de 1 a 50 caracteres, sem quebras de linha.')
+            with self.app.db() as db:
+                changed = db.execute('UPDATE devices SET name=? WHERE id=?',(name.strip(),rename[1]))
+                if not changed.rowcount:
+                    raise Problem('Dispositivo não encontrado.',404)
+            return self.reply({'ok':True,'name':name.strip()})
         if route == '/api/inbox' and method == 'GET':
             with self.app.db() as db:
                 items = [dict(row) for row in db.execute("SELECT u.id,u.path,u.size,r.status,d.name AS sender FROM uploads u JOIN routing r ON u.id=r.upload_id LEFT JOIN devices d ON d.id=r.owner WHERE r.target=? AND r.status IN ('ready','accepted') AND u.state='done'",(identity,))]
@@ -585,11 +596,11 @@ class Handler(BaseHTTPRequestHandler):
                         shutil.copyfileobj(inp, out, 1024 * 1024)
 
 
-def main():
+def main(argv=None):
     parser = argparse.ArgumentParser(description='DropAgíl — arquivos na sua rede')
     parser.add_argument('--port', type=int, default=8787)
     parser.add_argument('--data-dir', default=str(BASE))
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     app = App(args.data_dir, args.port)
     try:
         server = ThreadingHTTPServer(('0.0.0.0', args.port), Handler)

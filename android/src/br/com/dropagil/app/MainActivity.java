@@ -77,17 +77,17 @@ public class MainActivity extends Activity {
         hero.addView(button("Atualizar dispositivos",this::loadDestinations));loadDestinations();
         Button send=button("Enviar arquivos",this::pickFiles);send.setBackgroundTintList(android.content.res.ColorStateList.valueOf(0xffddf5b0));hero.addView(send);
         Button folders=button("Enviar uma pasta",this::pickFolder);folders.setTextColor(Color.WHITE);folders.setBackgroundTintList(android.content.res.ColorStateList.valueOf(0xff386253));hero.addView(folders);
-        title(transferPage,"Transferências","Acompanhe aqui ou pelas notificações.");
+        title(transferPage,"Transferências","Concluídos somem após 30 segundos. Os arquivos são mantidos.");
         LinearLayout controls=new LinearLayout(this);
         controls.addView(button("Pausar",()->control("pause")),new LinearLayout.LayoutParams(0,-2,1));controls.addView(button("Retomar",()->control("resume")),new LinearLayout.LayoutParams(0,-2,1));
         Button cancel=button("Cancelar tudo",()->control("cancel"));cancel.setTextColor(0xffa34536);controls.addView(cancel,new LinearLayout.LayoutParams(0,-2,1));transferPage.addView(controls);
         queueView=column();transferPage.addView(queueView);
         transferPage.addView(text("Dica: na galeria, toque em Compartilhar → DropAgíl. O envio aparece na notificação.",13,MUTED));
         receiving=button(ReceiveService.running?"Desativar recebimento":"Receber arquivos neste celular",()->{
-            if(ReceiveService.running){stopService(new Intent(this,ReceiveService.class));receiving.setText("Receber arquivos neste celular");}
+            if(ReceiveService.running){prefs().edit().putBoolean("receivingEnabled",false).apply();stopService(new Intent(this,ReceiveService.class));receiving.setText("Receber arquivos neste celular");}
             else if(prefs().getString("token","").isEmpty()){showTab(2);message("Conecte ao computador primeiro.");}
             else if(Build.VERSION.SDK_INT>=33&&checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED){requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS},9);message("Permita notificações e ative o recebimento novamente.");}
-            else {startForegroundService(new Intent(this,ReceiveService.class));receiving.setText("Desativar recebimento");message("Disponível na rede. Confirme os arquivos pela notificação.");}
+            else {prefs().edit().putBoolean("receivingEnabled",true).apply();startForegroundService(new Intent(this,ReceiveService.class));receiving.setText("Desativar recebimento");message("Disponível na rede. Confirme os arquivos pela notificação.");}
         });transferPage.addView(receiving);
         title(filesPage,"Arquivos da rede","Baixe ou libere espaço no computador.");
         LinearLayout fileButtons=new LinearLayout(this);fileButtons.addView(button("Atualizar",this::loadFiles),new LinearLayout.LayoutParams(0,-2,1));fileButtons.addView(button("Voltar à raiz",()->{folder="";loadFiles();}),new LinearLayout.LayoutParams(0,-2,1));filesPage.addView(fileButtons);
@@ -99,12 +99,33 @@ public class MainActivity extends Activity {
         config.addView(text("Código de acesso",13,MUTED));pin=new EditText(this);pin.setTextSize(16);pin.setSingleLine(true);pin.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);pin.setHint("Os 6 números da página do computador");config.addView(pin);
         Button connect=button("Conectar computador",this::pair);primary(connect);config.addView(connect);
         configPage.addView(text("O celular pode usar Wi-Fi e o computador, cabo. Ambos precisam estar no mesmo roteador. Encontre o endereço e o código em Conectar celular, no computador.",15,MUTED));
+        configPage.addView(button("Renomear dispositivos da rede",this::renameDevices));
         configPage.addView(button("Permissões de notificação",()->startActivity(new Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(android.provider.Settings.EXTRA_APP_PACKAGE,getPackageName()))));
-        configPage.addView(text("DropAgíl 3.0 • Feito para ficar por perto.\nOs arquivos trafegam pela rede local via HTTP.",12,MUTED));
+        configPage.addView(text("DropAgíl 4.0 • Feito para ficar por perto.\nOs arquivos trafegam pela rede local via HTTP.",12,MUTED));
         LinearLayout navigation=new LinearLayout(this);navigation.setPadding(dp(12),dp(6),dp(12),dp(8));
         tabs=new Button[]{button("Transferir",()->showTab(0)),button("Arquivos",()->showTab(1)),button("Conexão",()->showTab(2))};
         for(Button tab:tabs)navigation.addView(tab,new LinearLayout.LayoutParams(0,-2,1));shell.addView(navigation);
         showTab(prefs().getString("token","").isEmpty()?2:0);
+    }
+    @Override protected void onResume(){super.onResume();ReceiverStartup.start(this);}
+    @Override public void onRequestPermissionsResult(int request,String[] permissions,int[] grants){super.onRequestPermissionsResult(request,permissions,grants);ReceiverStartup.start(this);}
+    void renameDevices() {
+        if(prefs().getString("token","").isEmpty()){showTab(2);return;}
+        io.execute(()->{try{
+            JSONObject result=Api.request(prefs().getString("host",""),prefs().getString("token",""),"GET","/api/devices",null);
+            JSONArray list=new JSONArray();if(result.optJSONObject("current")!=null)list.put(result.getJSONObject("current"));JSONArray others=result.getJSONArray("devices");for(int i=0;i<others.length();i++)list.put(others.getJSONObject(i));
+            runOnUiThread(()->{
+                if(list.length()==0){message("Os dispositivos ainda estão se conectando. Tente novamente.");return;}
+                String[] names=new String[list.length()];for(int i=0;i<list.length();i++)names[i]=list.optJSONObject(i).optString("name")+" · "+list.optJSONObject(i).optString("id").substring(26);
+                new AlertDialog.Builder(this).setTitle("Renomear dispositivo").setItems(names,(dialog,index)->{
+                    JSONObject device=list.optJSONObject(index);EditText input=new EditText(this);input.setSingleLine(true);input.setText(device.optString("name"));input.setFilters(new android.text.InputFilter[]{new android.text.InputFilter.LengthFilter(50)});
+                    new AlertDialog.Builder(this).setTitle("Nome na rede").setView(input).setNegativeButton("Cancelar",null).setPositiveButton("Salvar",(d,w)->{
+                        String name=input.getText().toString().trim();
+                        io.execute(()->{try{Api.request(prefs().getString("host",""),prefs().getString("token",""),"POST","/api/devices/"+device.optString("id")+"/rename",new JSONObject().put("name",name));runOnUiThread(()->{loadDestinations();message("Nome atualizado em todos os dispositivos.");});}catch(Exception e){message(e.getMessage());}});
+                    }).show();
+                }).show();
+            });
+        }catch(Exception e){message(e.getMessage());}});
     }
     void loadDestinations() {
         if(prefs().getString("token","").isEmpty()) {setDestinations(new JSONArray());return;}
@@ -116,7 +137,7 @@ public class MainActivity extends Activity {
         if(!saved.isEmpty()&&selected==0){destinationIds.add(saved);names.add("Destino salvo • indisponível agora");selected=names.size()-1;}
         ArrayAdapter<String> adapter=new ArrayAdapter<>(this,android.R.layout.simple_spinner_item,names);adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);destination.setAdapter(adapter);destination.setSelection(selected);
     }
-    void pair(){String value=address.getText().toString(),code=pin.getText().toString();connection.setText("Conectando…");io.execute(()->{try{String host=Api.validate(value),token=Api.pair(host,code,Build.MODEL);prefs().edit().putString("host",host).putString("token",token).apply();runOnUiThread(()->{connection.setText("Conectado a "+host);pin.setText("");showTab(0);loadDestinations();loadFiles();if(!pendingUris.isEmpty())sendPending();});}catch(Exception e){runOnUiThread(()->connection.setText(e.getMessage()));}});}
+    void pair(){String value=address.getText().toString(),code=pin.getText().toString();connection.setText("Conectando…");io.execute(()->{try{String host=Api.validate(value),token=Api.pair(host,code,Build.MODEL);prefs().edit().putString("host",host).putString("token",token).apply();runOnUiThread(()->{connection.setText("Conectado a "+host);pin.setText("");ReceiverStartup.start(this);showTab(0);loadDestinations();loadFiles();if(!pendingUris.isEmpty())sendPending();});}catch(Exception e){runOnUiThread(()->connection.setText(e.getMessage()));}});}
     void receive(Intent intent){
         if(intent==null)return;
         String action=intent.getAction();
@@ -143,7 +164,7 @@ public class MainActivity extends Activity {
     String size(long bytes){if(bytes>=1024L*1024*1024)return String.format(Locale.getDefault(),"%.1f GB",bytes/(1024.0*1024*1024));if(bytes>=1024*1024)return String.format(Locale.getDefault(),"%.1f MB",bytes/(1024.0*1024));return bytes/1024+" KB";}
     String duration(long ms){long s=Math.max(0,ms/1000);return String.format(Locale.getDefault(),"%02d:%02d:%02d",s/3600,(s/60)%60,s%60);}
     void renderQueue(){JSONArray jobs=TransferService.snapshot(this);queueView.removeAllViews();boolean any=false;for(int i=0;i<jobs.length();i++){JSONObject job=jobs.optJSONObject(i);if(job==null||job.optString("state").equals("cancelled"))continue;any=true;String state=job.optString("state");long total=job.optLong("total"),sent=job.optLong("sent");int percent=state.equals("done")?100:total==0?0:(int)Math.min(99,sent*100.0/total);LinearLayout card=new LinearLayout(this);card.setOrientation(LinearLayout.VERTICAL);card.setPadding(dp(12),dp(8),dp(12),dp(12));card.setBackground(rounded(Color.WHITE,18));LinearLayout.LayoutParams layout=new LinearLayout.LayoutParams(-1,-2);layout.bottomMargin=dp(10);queueView.addView(card,layout);card.addView(text(job.optString("name"),17,GREEN));ProgressBar bar=new ProgressBar(this,null,android.R.attr.progressBarStyleHorizontal);bar.setMax(100);bar.setProgress(percent);bar.setProgressTintList(android.content.res.ColorStateList.valueOf(GREEN));bar.setProgressBackgroundTintList(android.content.res.ColorStateList.valueOf(0xffe5ecdd));card.addView(bar);String label=state.equals("done")?"Concluído":state.equals("sending")?"Enviando":state.equals("paused")?"Pausado":state.equals("error")?"Falha":"Na fila";long end=job.optLong("finished",System.currentTimeMillis());double speed=job.optDouble("speed",0);String estimate=speed>0&&state.equals("sending")?" · cerca de "+(long)((total-sent)/speed)+" s restantes":"";card.addView(text(percent+"% · "+size(sent)+" / "+size(total)+" · "+label+"\nTempo: "+duration(end-job.optLong("started",end))+estimate,13,MUTED));if(state.equals("error"))card.addView(text(job.optString("error"),13,0xffa04d35));}if(!any){LinearLayout empty=card(queueView);empty.addView(text("Tudo pronto para enviar",18,GREEN));empty.addView(text("Escolha arquivos acima ou compartilhe direto da galeria.",14,MUTED));}}
-    final Runnable tick=new Runnable(){public void run(){if(currentTab==0)renderQueue();timer.postDelayed(this,1000);}};
+    final Runnable tick=new Runnable(){public void run(){if(receiving!=null)receiving.setText(ReceiveService.running?"Recebimento ativado • desativar":"Receber arquivos neste celular");if(currentTab==0)renderQueue();timer.postDelayed(this,1000);}};
     void loadFiles(){if(prefs().getString("token","").isEmpty())return;String path=folder;io.execute(()->{try{JSONObject response=Api.request(prefs().getString("host",""),prefs().getString("token",""),"GET","/api/files?path="+Uri.encode(path),null);runOnUiThread(()->renderFiles(response.optJSONArray("items"),path));}catch(Exception e){message(e.getMessage());}});}
     void renderFiles(JSONArray files,String path) {
         if(!folder.equals(path))return;

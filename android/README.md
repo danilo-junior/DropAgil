@@ -25,18 +25,25 @@ Fotos armazenadas somente na nuvem podem precisar ser baixadas pelo app da Galer
 
 ## Receber de outro aparelho
 
-Na aba Transferir, toque **Receber arquivos neste celular**. O celular aparece como destino pelo nome do modelo e mantém uma notificação de disponibilidade. O computador central precisa continuar ligado. Ao chegar uma entrega, toque **Aceitar** para baixar ou **Recusar** para apagar a cópia temporária do servidor. Os arquivos são salvos em `Downloads/DropAgil`, cada um em sua subpasta para evitar sobrescritas. O gerenciador de downloads mostra o progresso e a conclusão.
+O recebimento vem **ativado por padrão** nos celulares pareados, desde que as notificações estejam permitidas. Para controlar isso, use o botão de recebimento na aba Transferir. O celular aparece como destino pelo nome do modelo e mantém uma notificação de disponibilidade. O computador central precisa continuar ligado. Ao chegar uma entrega, toque **Aceitar** para baixar ou **Recusar** para apagar a cópia temporária do servidor. Os arquivos são salvos em `Downloads/DropAgil`, cada um em sua subpasta para evitar sobrescritas. O gerenciador de downloads mostra o progresso e a conclusão.
 
-O serviço de recebimento usa o tipo Android `connectedDevice` para comunicação com o computador pela rede local. É ativado pelo usuário e pode ser desativado na notificação. Não reinicia automaticamente após reboot ou fechamento forçado. Restrições de bateria/Doze do fabricante podem atrasar a chegada de pedidos. Se não aparecer, abra o app e reative o recebimento.
+O serviço de recebimento usa o tipo Android `connectedDevice` para comunicação com o computador pela rede local. É ativado pelo usuário e pode ser desativado na notificação. Tenta iniciar após reiniciar o Android ou atualizar o APK, quando permitido pelo sistema. Após fechamento forçado, abra o app novamente. Se você desativar o recebimento, essa preferência é preservada. Restrições de bateria/Doze do fabricante podem atrasar a chegada de pedidos. Se não aparecer, abra o app e reative o recebimento.
+
+## Notificações na versão 4
+
+Aceitar e Recusar estão presentes nos layouts compacto, expandido e flutuante. Toque no corpo da notificação para abrir a confirmação com botões grandes. Não é preciso segurar a notificação. A exibição final e os avisos flutuantes dependem das configurações do aparelho e do fabricante; o aplicativo não solicita sobreposição nem tela cheia.
+
+As ações atingem apenas os arquivos apresentados naquele pedido, sem aceitar automaticamente novos arquivos que chegarem depois.
 
 ## Dentro do app
 
 - **Abrir página**: abre a página local do computador no navegador.
 - **Apagar**: remove arquivos/pastas da rede após confirmação.
+- **Renomear dispositivos da rede**: disponível em Conexão; os nomes são salvos no computador e compartilhados com todos os aparelhos.
 - **Enviar para**: Rede ou um aparelho com recebimento ativado.
 - **Enviar arquivos**: seletor nativo com múltipla seleção.
 - **Enviar pasta**: seletor de pastas do Android, preservando a estrutura dos arquivos.
-- **Transferências**: uma linha por seleção/pasta, percentual total, bytes, tempo decorrido e estimativa restante.
+- **Transferências**: uma linha por seleção/pasta, percentual total, bytes, tempo decorrido e estimativa restante. Linhas concluídas somem após 30 segundos; os arquivos são mantidos.
 - **Pausar / Retomar / Cancelar tudo**: controles da fila deste celular. Cancelar preserva arquivos já concluídos no computador.
 - **Arquivos da rede**: navegação por pastas e downloads nativos para a pasta Downloads. O gerenciador de downloads do Android acompanha o progresso; pastas são baixadas em ZIP.
 

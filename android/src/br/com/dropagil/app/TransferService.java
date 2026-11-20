@@ -24,7 +24,16 @@ public class TransferService extends Service {
     static String state(JSONObject j){return j.optString("state","queued");}
     static boolean terminal(JSONObject j){return state(j).equals("done")||state(j).equals("cancelled");}
     static JSONArray snapshot(Context ctx) {
-        synchronized(LOCK){try{return new JSONArray(running?jobs.toString():ctx.getSharedPreferences("dropagil",0).getString("queue","[]"));}catch(Exception e){return new JSONArray();}}
+        synchronized(LOCK){try{
+            JSONArray source=new JSONArray(running?jobs.toString():ctx.getSharedPreferences("dropagil",0).getString("queue","[]"));
+            JSONArray visible=new JSONArray();long now=System.currentTimeMillis();
+            for(int i=0;i<source.length();i++){JSONObject job=source.getJSONObject(i);if(state(job).equals("done")&&now-job.optLong("finished",0)>=30000)continue;visible.put(job);}
+            if(visible.length()!=source.length()){
+                if(running)jobs=visible;
+                ctx.getSharedPreferences("dropagil",0).edit().putString("queue",visible.toString()).apply();
+            }
+            return visible;
+        }catch(Exception e){return new JSONArray();}}
     }
     void persist(){synchronized(LOCK){getSharedPreferences("dropagil",0).edit().putString("queue",jobs.toString()).commit();}}
     @Override public void onCreate(){
@@ -157,7 +166,7 @@ public class TransferService extends Service {
         String detail=errors>0?"Abra a fila para ver o erro e retomar.":paused>0?"Abra a fila para retomar o envio.":latest.optString("name")+(state(latest).equals("done")?(latest.optString("target","").isEmpty()?" • disponível na rede":" • aguardando aceite no destino"):"");
         Notification result=new Notification.Builder(this,"transfers").setSmallIcon(R.drawable.ic_notification).setColor(0xff244d40)
             .setContentTitle("DropAgíl • "+title).setContentText(detail).setStyle(new Notification.BigTextStyle().bigText(detail))
-            .setAutoCancel(true).setContentIntent(PendingIntent.getActivity(this,0,new Intent(this,MainActivity.class),PendingIntent.FLAG_UPDATE_CURRENT|PendingIntent.FLAG_IMMUTABLE)).build();
+            .setTimeoutAfter(30000).setAutoCancel(true).setContentIntent(PendingIntent.getActivity(this,0,new Intent(this,MainActivity.class),PendingIntent.FLAG_UPDATE_CURRENT|PendingIntent.FLAG_IMMUTABLE)).build();
         getSystemService(NotificationManager.class).notify(8,result);
     }
     void updateNotification(JSONObject job){if(System.currentTimeMillis()-lastNotify<400)return;lastNotify=System.currentTimeMillis();long total=job.optLong("total");int percent=total==0?0:(int)Math.min(99,job.optLong("sent")*100.0/total);getSystemService(NotificationManager.class).notify(7,notification(job.optString("name"),percent));}

@@ -6,7 +6,7 @@ import secrets
 import threading
 import time
 
-BASE = Path(__file__).resolve().parent
+from runtime_paths import BASE
 
 
 class LocalAPI:
@@ -63,7 +63,13 @@ class DesktopQueue:
         with self.guard:
             target = self.path.with_suffix('.tmp')
             target.write_text(json.dumps(self.jobs,ensure_ascii=False),'utf-8')
-            target.replace(self.path)
+            for attempt in range(6):
+                try:
+                    target.replace(self.path)
+                    break
+                except PermissionError:
+                    if attempt == 5: raise
+                    time.sleep(.04 * (attempt+1))
 
     def add(self, paths, target=''):
         with self.guard:
@@ -81,6 +87,16 @@ class DesktopQueue:
     def snapshot(self):
         with self.guard:
             return [{k:v for k,v in job.items() if k != 'items'} for job in self.jobs]
+
+    def prune_finished(self, now=None, delay=30):
+        """Forget successful rows only; never remove payloads or resumable work."""
+        now = time.time() if now is None else now
+        with self.guard:
+            before = len(self.jobs)
+            self.jobs[:] = [job for job in self.jobs if not (
+                job['state'] == 'done' and now-(job.get('finished') or 0) >= delay)]
+            if len(self.jobs) != before:
+                self.persist()
 
     def control(self, action):
         with self.guard:

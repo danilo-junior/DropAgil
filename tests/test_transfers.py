@@ -120,6 +120,21 @@ class TransferTests(unittest.TestCase):
         self.assertEqual(self.request('DELETE', '/api/files', {'path':'mobile-cleanup.txt'},
             headers={'Authorization':'Bearer ' + pairing['token']}, auth=False)[0], 200)
 
+    def test_device_rename_persists_across_heartbeat_and_restart(self):
+        _, _, pair=self.request('POST','/api/pair',{'name':'Android model'})
+        headers={'Authorization':'Bearer '+pair['token']}
+        _, _, registered=self.request('POST','/api/devices',{'name':'Android model'},headers,auth=False)
+        device_id=registered['id'];route='/api/devices/'+device_id+'/rename'
+        self.assertEqual(self.request('POST',route,{'name':'Celular da Thai'})[0],200)
+        _, _, refreshed=self.request('POST','/api/devices',{'name':'Android model'},headers,auth=False)
+        self.assertEqual(refreshed['current']['name'],'Celular da Thai')
+        reloaded=App(self.temp.name,self.port,'123456')
+        with reloaded.db() as db:self.assertEqual(db.execute('SELECT name FROM devices WHERE id=?',(device_id,)).fetchone()[0],'Celular da Thai')
+        self.assertEqual(self.request('POST',route,{'name':'bad'},auth=False)[0],401)
+        for name in ['', ' ', 'x'*51, 'line\nbreak']:
+            self.assertEqual(self.request('POST',route,{'name':name})[0],400)
+        self.assertEqual(self.request('POST','/api/devices/'+'0'*32+'/rename',{'name':'Missing'})[0],404)
+
     def test_direct_delivery_is_private_and_requires_recipient_acceptance(self):
         def device(name):
             _, _, pair = self.request('POST','/api/pair',{'name':name})

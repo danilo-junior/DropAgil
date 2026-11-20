@@ -1,0 +1,8 @@
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical">
+  <TextView android:id="@+id/offer_title" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Receber arquivos?" android:textSize="16sp" android:textStyle="bold" android:maxLines="2" android:ellipsize="end" style="@android:style/TextAppearance.Material.Notification.Title"/>
+  <TextView android:id="@+id/offer_detail" android:layout_width="match_parent" android:layout_height="wrap_content" android:maxLines="3" android:ellipsize="end" android:paddingTop="4dp" android:textSize="13sp" style="@android:style/TextAppearance.Material.Notification"/>
+  <LinearLayout android:layout_width="match_parent" android:layout_height="48dp" android:orientation="horizontal">
+    <Button android:id="@+id/offer_accept" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="Aceitar e baixar" android:textAllCaps="false" android:textColor="#244D40"/>
+    <Button android:id="@+id/offer_reject" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:text="Recusar" android:textAllCaps="false" android:textColor="#A34536"/>
+  </LinearLayout>
+</LinearLayout>

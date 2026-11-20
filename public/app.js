@@ -23,7 +23,7 @@ const paths = {
 const $ = id => document.getElementById(id);
 function icon(name) { return `<svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="${paths[name] || paths.file}"/></svg>`; }
 document.querySelectorAll('[data-icon]').forEach(el => el.innerHTML = icon(el.dataset.icon));
-document.querySelector('.version').textContent = 'DropAgíl · versão 3.0';
+document.querySelector('.version').textContent = 'DropAgíl · versão 4.0';
 const androidLink = document.createElement('a');
 androidLink.className = 'button primary'; androidLink.href = '/api/android-apk'; androidLink.textContent = 'Baixar aplicativo Android'; androidLink.setAttribute('download','DropAgil-Android.apk');
 document.querySelector('.steps-card').append(androidLink);
@@ -344,4 +344,12 @@ function renderQueue() {
 $('cancelAll').onclick = () => { if (confirm('Cancelar todos os envios desta página? Arquivos já concluídos serão mantidos.')) cancelTransfers(transfers); };
 $('clearCompleted').onclick = () => { const done = new Set(TransferGroups.groupTransfers(transfers).filter(g => TransferGroups.summarize(g).state === 'done').flatMap(g => g.items)); transfers = transfers.filter(t => !done.has(t)); renderQueue(); };
 window.addEventListener('beforeunload', e => { if (active > 0) { e.preventDefault(); e.returnValue = ''; } });
+setInterval(() => {
+  const expired = new Set(TransferGroups.groupTransfers(transfers)
+    .filter(g => g.items.every(t => t.state === 'done') && Date.now() - Math.max(...g.items.map(t => t.finishedAt || 0)) >= 30000)
+    .flatMap(g => g.items));
+  if (!expired.size) return;
+  for (const t of expired) delete pending[t.key];
+  transfers = transfers.filter(t => !expired.has(t)); remember(); renderQueue();
+}, 1000);
 init();

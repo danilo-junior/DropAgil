@@ -6,6 +6,8 @@ import android.content.pm.ServiceInfo;
 import android.database.Cursor;
 import android.net.Uri;
 import android.os.*;
+import android.widget.RemoteViews;
+import java.util.*;
 import org.json.*;
 import java.util.concurrent.*;
 
@@ -19,10 +21,19 @@ public class ReceiveService extends Service {
         return Api.request(prefs().getString("host",""),prefs().getString("token",""),method,path,data);
     }
     PendingIntent action(String action,int id){return PendingIntent.getForegroundService(this,id,new Intent(this,ReceiveService.class).setAction(action),PendingIntent.FLAG_UPDATE_CURRENT|PendingIntent.FLAG_IMMUTABLE);}
+    PendingIntent offerAction(String verb,int code,String[] ids){return PendingIntent.getForegroundService(this,code,new Intent(this,ReceiveService.class).setAction(verb).putExtra("ids",ids),PendingIntent.FLAG_UPDATE_CURRENT|PendingIntent.FLAG_IMMUTABLE);}
+    RemoteViews offerView(int layout,String title,String detail,String[] ids) {
+        RemoteViews view=new RemoteViews(getPackageName(),layout);
+        view.setTextViewText(R.id.offer_title,title);
+        if(layout==R.layout.receive_expanded)view.setTextViewText(R.id.offer_detail,detail);
+        view.setOnClickPendingIntent(R.id.offer_accept,offerAction("accept",21,ids));
+        view.setOnClickPendingIntent(R.id.offer_reject,offerAction("reject",22,ids));
+        return view;
+    }
     @Override public void onCreate(){
         super.onCreate();running=true;
         NotificationManager nm=getSystemService(NotificationManager.class);
-        nm.createNotificationChannel(new NotificationChannel("receiver","Receber do DropAgíl",NotificationManager.IMPORTANCE_DEFAULT));
+        nm.createNotificationChannel(new NotificationChannel("receiver_requests_v4","Receber do DropAgíl",NotificationManager.IMPORTANCE_HIGH));
         Notification status=new Notification.Builder(this,"transfers").setSmallIcon(R.drawable.ic_notification).setContentTitle("DropAgíl disponível para receber")
             .setContentText("Dispositivos da sua rede podem enviar arquivos.").setOngoing(true)
             .setContentIntent(PendingIntent.getActivity(this,0,new Intent(this,MainActivity.class),PendingIntent.FLAG_UPDATE_CURRENT|PendingIntent.FLAG_IMMUTABLE))
@@ -32,11 +43,12 @@ public class ReceiveService extends Service {
         worker.scheduleWithFixedDelay(()->{try{poll();}catch(Exception ignored){}},0,3,TimeUnit.SECONDS);
     }
     @Override public int onStartCommand(Intent intent,int flags,int startId){
-        if(intent!=null&&"stop".equals(intent.getAction())){stopSelf();return START_NOT_STICKY;}
+        if(intent!=null&&"stop".equals(intent.getAction())){prefs().edit().putBoolean("receivingEnabled",false).apply();stopSelf();return START_NOT_STICKY;}
+        if(!ReceiverStartup.enabled(this)){stopSelf();return START_NOT_STICKY;}
         if(intent!=null&&("accept".equals(intent.getAction())||"reject".equals(intent.getAction()))){
-            String action=intent.getAction();worker.execute(()->{try{respond(action);}catch(Exception e){notice("Não foi possível receber",e.getMessage());}});
+            String action=intent.getAction();String[] ids=intent.getStringArrayExtra("ids");worker.execute(()->{try{respond(action,ids);}catch(Exception e){notice("Não foi possível receber",e.getMessage());}});
         }
-        return START_NOT_STICKY;
+        return START_STICKY;
     }
     JSONObject downloads(){try{return new JSONObject(prefs().getString("incomingDownloads","{}"));}catch(Exception e){return new JSONObject();}}
     void save(JSONObject tracked){prefs().edit().putString("incomingDownloads",tracked.toString()).commit();}
@@ -56,22 +68,29 @@ public class ReceiveService extends Service {
         }
         for(String id:finished)tracked.remove(id);save(tracked);
         JSONArray inbox=request("GET","/api/inbox",null).getJSONArray("items");
-        StringBuilder signature=new StringBuilder();int count=0;String sender="outro dispositivo",name="";
-        for(int i=0;i<inbox.length();i++){JSONObject file=inbox.getJSONObject(i);if(tracked.has(file.getString("id")))continue;signature.append(file.getString("id"));count++;sender=file.optString("sender","outro dispositivo");name=file.getString("path");}
+        ArrayList<String> offeredIds=new ArrayList<>();StringBuilder signature=new StringBuilder();int count=0;String sender="outro dispositivo",name="";
+        for(int i=0;i<inbox.length();i++){JSONObject file=inbox.getJSONObject(i);if(tracked.has(file.getString("id")))continue;signature.append(file.getString("id"));offeredIds.add(file.getString("id"));count++;sender=file.optString("sender","outro dispositivo");name=file.getString("path");}
         if(count==0){getSystemService(NotificationManager.class).cancel(11);lastOffer="";return;}
         if(signature.toString().equals(lastOffer))return;lastOffer=signature.toString();
-        Notification notification=new Notification.Builder(this,"receiver").setSmallIcon(R.drawable.ic_notification).setColor(0xff244d40)
-            .setContentTitle(count==1?"Receber arquivo?":"Receber "+count+" arquivos?")
-            .setContentText(count==1?sender+" • "+name:"Arquivos enviados para este celular. Salvar em Downloads/DropAgil?")
-            .setStyle(new Notification.BigTextStyle().bigText(count==1?sender+" enviou "+name+". Salvar em Downloads/DropAgil?":"Aceitar baixa todos os arquivos pendentes para este celular."))
-            .addAction(new Notification.Action.Builder(null,"Aceitar",action("accept",21)).build())
-            .addAction(new Notification.Action.Builder(null,"Recusar",action("reject",22)).build()).setOnlyAlertOnce(true).build();
+        String title=count==1?"Receber arquivo?":"Receber "+count+" arquivos?";
+        String detail=count==1?sender+" enviou "+name+". Salvar em Downloads/DropAgil?":"Os "+count+" arquivos serão salvos em Downloads/DropAgil.";
+        String[] ids=offeredIds.toArray(new String[0]);
+        PendingIntent open=PendingIntent.getActivity(this,23,new Intent(this,ReceiveActivity.class).putExtra("ids",ids).putExtra("detail",detail),PendingIntent.FLAG_UPDATE_CURRENT|PendingIntent.FLAG_IMMUTABLE);
+        Notification notification=new Notification.Builder(this,"receiver_requests_v4").setSmallIcon(R.drawable.ic_notification).setColor(0xff244d40)
+            .setContentTitle(title).setContentText(detail).setCategory(Notification.CATEGORY_STATUS)
+            .setVisibility(Notification.VISIBILITY_PRIVATE).setContentIntent(open)
+            .setStyle(new Notification.DecoratedCustomViewStyle())
+            .setCustomContentView(offerView(R.layout.receive_compact,title,detail,ids))
+            .setCustomBigContentView(offerView(R.layout.receive_expanded,title,detail,ids))
+            .setCustomHeadsUpContentView(offerView(R.layout.receive_expanded,title,detail,ids))
+            .setOnlyAlertOnce(true).build();
         getSystemService(NotificationManager.class).notify(11,notification);
     }
-    void respond(String action)throws Exception {
+    void respond(String action,String[] ids)throws Exception {
+        if(ids==null||ids.length==0)return;Set<String> allowed=new HashSet<>(Arrays.asList(ids));
         JSONArray inbox=request("GET","/api/inbox",null).getJSONArray("items");JSONObject tracked=downloads();
         for(int i=0;i<inbox.length();i++){
-            JSONObject file=inbox.getJSONObject(i);String id=file.getString("id");if(tracked.has(id))continue;
+            JSONObject file=inbox.getJSONObject(i);String id=file.getString("id");if(tracked.has(id)||!allowed.contains(id))continue;
             request("POST","/api/inbox/"+id,new JSONObject().put("action",action));
             if(action.equals("accept")){
                 String path=file.getString("path");
@@ -84,7 +103,7 @@ public class ReceiveService extends Service {
         }
         lastOffer="";getSystemService(NotificationManager.class).cancel(11);
     }
-    void notice(String title,String detail){getSystemService(NotificationManager.class).notify(12,new Notification.Builder(this,"receiver").setSmallIcon(R.drawable.ic_notification).setContentTitle(title).setContentText(detail).setAutoCancel(true).build());}
+    void notice(String title,String detail){getSystemService(NotificationManager.class).notify(12,new Notification.Builder(this,"receiver_requests_v4").setSmallIcon(R.drawable.ic_notification).setContentTitle(title).setContentText(detail).setAutoCancel(true).build());}
     @Override public void onDestroy(){running=false;worker.shutdownNow();super.onDestroy();}
     @Override public IBinder onBind(Intent intent){return null;}
 }
