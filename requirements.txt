@@ -1,0 +1,4 @@
+# Opcional: somente para gerar o QR Code. Transferências funcionam sem ele.
+qrcode==8.2
+pystray==0.19.5
+Pillow>=10.0

@@ -1,0 +1,10 @@
+.dropagil/
+Recebidos/
+__pycache__/
+*.log
+*.zip
+.venv/
+.work/
+vendor/
+*.apk
+*.keystore
