@@ -12,3 +12,5 @@
 .queue-buttons{display:flex;gap:14px;flex-wrap:wrap;justify-content:flex-end}.text-button.danger{color:#a4513a}.transfer-meta{align-items:flex-start}.transfer-label{overflow-wrap:anywhere}.transfer-percentage{white-space:nowrap;font-variant-numeric:tabular-nums}
 
 .button.danger{color:#a34536}.file-row{flex-wrap:wrap}.file-details{min-width:0}.file-name{overflow-wrap:anywhere}
+
+.destination-box{display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:#fff;border:1px solid var(--line);border-radius:16px;padding:16px;margin-bottom:16px}.destination-box label{font-weight:600;font-size:13px}.destination-box select{flex:1;min-width:180px;border:1px solid var(--line);border-radius:8px;padding:11px;background:#f5f7f2;color:var(--ink)}.destination-box small{flex-basis:100%;font-size:12px;color:var(--muted);line-height:1.5}#incomingFiles{width:100%}#incomingFiles:empty{display:none}.incoming-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:12px 0;border-top:1px solid var(--line)}.incoming-row span{flex:1;min-width:200px;overflow-wrap:anywhere;font-size:13px}

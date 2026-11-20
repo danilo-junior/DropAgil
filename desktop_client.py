@@ -65,7 +65,7 @@ class DesktopQueue:
             target.write_text(json.dumps(self.jobs,ensure_ascii=False),'utf-8')
             target.replace(self.path)
 
-    def add(self, paths):
+    def add(self, paths, target=''):
         with self.guard:
             batch = next((j.get('batch',j['id']) for j in self.jobs if j['state'] not in ('done','cancelled')),secrets.token_hex(8))
             for raw in dict.fromkeys(paths):
@@ -74,7 +74,7 @@ class DesktopQueue:
                     continue
                 if source.is_relative_to((BASE / 'Recebidos').resolve()):
                     continue
-                self.jobs.append({'id':secrets.token_hex(8),'batch':batch,'source':str(source),'name':source.name,'folder':source.is_dir(),'state':'queued','items':None,'total':0,'sent':0,'started':None,'finished':None,'error':'','speed':0})
+                self.jobs.append({'id':secrets.token_hex(8),'batch':batch,'source':str(source),'name':source.name,'folder':source.is_dir(),'state':'queued','items':None,'total':0,'sent':0,'started':None,'finished':None,'error':'','speed':0,'target':target})
             self.persist()
         self.changed.set()
 
@@ -143,7 +143,7 @@ class DesktopQueue:
             stat = source.stat()
             if stat.st_size != item['size'] or stat.st_mtime_ns != item['mtime']:
                 raise RuntimeError('O arquivo de origem mudou. Cancele e envie novamente: ' + source.name)
-            upload = self.api.request('POST','/api/uploads',{'path':item['path'],'size':item['size'],'id':item['id'],'fingerprint':f"desktop:{item['source']}:{item['size']}:{item['mtime']}"})
+            upload = self.api.request('POST','/api/uploads',{'target':job.get('target',''),'path':item['path'],'size':item['size'],'id':item['id'],'fingerprint':f"desktop:{item['source']}:{item['size']}:{item['mtime']}"})
             item['id'],item['offset'] = upload['id'],upload['offset']
             self.persist()
             with source.open('rb') as stream:

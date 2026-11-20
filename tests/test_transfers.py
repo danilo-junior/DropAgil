@@ -14,6 +14,7 @@ import zipfile
 
 from server import App, Handler, ThreadingHTTPServer, CHUNK
 from desktop_client import DesktopQueue, LocalAPI
+from desktop_receiver import DesktopReceiver
 
 
 class TransferTests(unittest.TestCase):
@@ -118,6 +119,73 @@ class TransferTests(unittest.TestCase):
         (self.app.shared / 'mobile-cleanup.txt').write_text('test')
         self.assertEqual(self.request('DELETE', '/api/files', {'path':'mobile-cleanup.txt'},
             headers={'Authorization':'Bearer ' + pairing['token']}, auth=False)[0], 200)
+
+    def test_direct_delivery_is_private_and_requires_recipient_acceptance(self):
+        def device(name):
+            _, _, pair = self.request('POST','/api/pair',{'name':name})
+            headers = {'Authorization':'Bearer '+pair['token']}
+            code, _, registered = self.request('POST','/api/devices',{'name':name},headers,auth=False)
+            self.assertEqual(code,200)
+            return headers, registered['id']
+        first, first_id = device('Dispositivo 1')
+        second, second_id = device('Dispositivo 2')
+        third, third_id = device('Dispositivo 3')
+        data = bytes(range(256))*100
+        code, _, upload = self.request('POST','/api/uploads',{'path':'private/foto.jpg','size':len(data),'target':third_id},second,auth=False)
+        self.assertEqual(code,200)
+        uid=upload['id']
+        self.assertEqual(self.request('PUT','/api/uploads/'+uid,data,{**second,'Upload-Offset':'0'},auth=False)[0],200)
+        self.assertEqual(self.request('POST','/api/uploads/'+uid+'/complete',{},second,auth=False)[0],200)
+        self.assertFalse((self.app.shared/'private/foto.jpg').exists())
+        self.assertEqual(self.request('GET','/api/uploads/'+uid,headers=first,auth=False)[0],404)
+        self.assertEqual(self.request('GET','/api/inbox',headers=first,auth=False)[2]['items'],[])
+        inbox=self.request('GET','/api/inbox',headers=third,auth=False)[2]['items']
+        self.assertIn(uid,[f['id'] for f in inbox])
+        route='/api/inbox/'+uid
+        self.assertEqual(self.request('GET',route+'/download',headers=third,auth=False)[0],403)
+        self.assertEqual(self.request('POST',route,{'action':'accept'},first,auth=False)[0],404)
+        self.assertEqual(self.request('POST',route,{'action':'accept'},third,auth=False)[0],200)
+        self.assertEqual(self.request('GET',route+'/download',headers=third,auth=False)[2],data)
+        code, _, partial=self.request('GET',route+'/download',headers={**third,'Range':'bytes=100-'},auth=False)
+        self.assertEqual(code,206);self.assertEqual(partial,data[100:])
+        self.assertEqual(self.request('POST',route,{'action':'received'},third,auth=False)[0],200)
+        self.assertFalse((self.app.temp/'direct'/uid).exists())
+        self.assertEqual(self.request('GET',route+'/download',headers=third,auth=False)[0],403)
+        self.assertEqual(self.request('GET','/api/inbox',headers=third,auth=False)[2]['items'],[])
+
+    def test_direct_rejection_and_changed_recipient(self):
+        _, _, pair=self.request('POST','/api/pair',{'name':'Receiver'})
+        headers={'Authorization':'Bearer '+pair['token']}
+        _, _, registered=self.request('POST','/api/devices',{'name':'Receiver'},headers,auth=False)
+        upload=self.create('direct-zero.txt',0,target=registered['id'])
+        self.assertEqual(self.request('POST','/api/uploads',{'path':'direct-zero.txt','size':0,'id':upload['id'],'target':'','fingerprint':'direct-zero.txt'})[0],409)
+        self.complete(upload['id'])
+        self.assertEqual(self.request('POST','/api/inbox/'+upload['id'],{'action':'reject'},headers,auth=False)[0],200)
+        self.assertFalse((self.app.temp/'direct'/upload['id']).exists())
+        self.assertEqual(self.request('POST','/api/uploads',{'path':'x','size':0,'target':'missing'})[0],404)
+
+    def test_windows_receiver_streams_and_resumes_to_downloads(self):
+        api=LocalAPI(self.port)
+        local=api.request('POST','/api/devices',{'name':'Windows test'})
+        _, _, pair=self.request('POST','/api/pair',{'name':'Sender test'})
+        headers={'Authorization':'Bearer '+pair['token']}
+        data=b'large-content-'*100000
+        code, _, upload=self.request('POST','/api/uploads',{'path':'album/video.mp4','size':len(data),'target':local['id']},headers,auth=False)
+        self.assertEqual(code,200)
+        uid=upload['id']
+        self.assertEqual(self.request('PUT','/api/uploads/'+uid,data,{**headers,'Upload-Offset':'0'},auth=False)[0],200)
+        self.assertEqual(self.request('POST','/api/uploads/'+uid+'/complete',{},headers,auth=False)[0],200)
+        api.request('POST','/api/inbox/'+uid,{'action':'accept'})
+        receiver=DesktopReceiver.__new__(DesktopReceiver)
+        receiver.api,receiver.stop=api,threading.Event()
+        receiver.destination=Path(self.temp.name)/'downloads'
+        part=receiver.destination/uid[:8]/'album/video.mp4.dropagil-part'
+        part.parent.mkdir(parents=True);part.write_bytes(data[:10000])
+        target=receiver.download({'id':uid,'path':'album/video.mp4','size':len(data)})
+        self.assertEqual(target.read_bytes(),data)
+        self.assertFalse(part.exists())
+        api.request('POST','/api/inbox/'+uid,{'action':'received'})
+        self.assertEqual(target.read_bytes(),data)
 
     def test_traversal_windows_reserved_and_symlinks(self):
         for path in ['../escape','folder/../../escape','/absolute','C:\\escape','folder\\..\\escape','NUL.txt','a/b.','a:b','foo\x00bar']:

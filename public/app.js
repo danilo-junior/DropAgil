@@ -23,7 +23,7 @@ const paths = {
 const $ = id => document.getElementById(id);
 function icon(name) { return `<svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="${paths[name] || paths.file}"/></svg>`; }
 document.querySelectorAll('[data-icon]').forEach(el => el.innerHTML = icon(el.dataset.icon));
-document.querySelector('.version').textContent = 'DropAgíl · versão 2.0';
+document.querySelector('.version').textContent = 'DropAgíl · versão 3.0';
 const androidLink = document.createElement('a');
 androidLink.className = 'button primary'; androidLink.href = '/api/android-apk'; androidLink.textContent = 'Baixar aplicativo Android'; androidLink.setAttribute('download','DropAgil-Android.apk');
 document.querySelector('.steps-card').append(androidLink);
@@ -35,7 +35,7 @@ let status = null, currentView = 'transfer', currentPath = '', files = [], trans
 let pending = {};
 try { pending = JSON.parse(localStorage.getItem('dropagil.pending') || '{}'); } catch { /* Private browser may block storage. */ }
 function remember() { try { localStorage.setItem('dropagil.pending', JSON.stringify(pending)); } catch { toast('O navegador não permitiu salvar a retomada. Mantenha esta página aberta.'); } }
-function saveTransfer(t) { pending[t.key] = {id:t.id, path:t.path, size:t.size, offset:t.offset, key:t.key, groupId:t.groupId, groupName:t.groupName, done:t.state === 'done', startedAt:t.startedAt, finishedAt:t.finishedAt}; remember(); }
+function saveTransfer(t) { pending[t.key] = {id:t.id, path:t.path,target:t.target || '', size:t.size, offset:t.offset, key:t.key, groupId:t.groupId, groupName:t.groupName, done:t.state === 'done', startedAt:t.startedAt, finishedAt:t.finishedAt}; remember(); }
 function forget(t) { delete pending[t.key]; remember(); }
 async function api(url, options = {}) {
   const response = await fetch(url, {cache:'no-store', ...options});
@@ -194,16 +194,17 @@ function enqueue(items) {
   if (!items.length) { toast('Nenhum arquivo selecionado. Pastas vazias não são enviadas pelo navegador.'); return; }
   const selectionGroups = new Map();
   for (const {file,path} of items) {
-    const key = JSON.stringify([path,file.size,file.lastModified]);
+    const target = $('sendDestination')?.value || '';
+    const key = JSON.stringify(target ? [path,file.size,file.lastModified,target] : [path,file.size,file.lastModified]);
     const completed = transfers.find(t => t.key === key && t.state === 'done' && t.groupId && transfers.some(other => other.groupId === t.groupId && !['done','cancelled'].includes(other.state)));
     if (completed) continue;
     const existing = transfers.find(t => t.key === key && !['done','cancelled'].includes(t.state));
     if (existing && existing.state !== 'reselect') continue;
     const t = existing || {key,id:pending[key]?.id,offset:pending[key]?.offset || 0};
-    Object.assign(t, {file,path,name:file.name,size:file.size,state:'queued',loaded:0,error:'',speed:0});
+    Object.assign(t, {file,path,target,name:file.name,size:file.size,state:'queued',loaded:0,error:'',speed:0});
     if (path.includes('/')) {
       const name = path.split('/')[0];
-      if (!selectionGroups.has(name)) selectionGroups.set(name, existing?.groupId || transfers.find(other => other.groupName === name && !['done','cancelled'].includes(other.state))?.groupId || `folder:${Date.now()}:${Math.random()}`);
+      if (!selectionGroups.has(name)) selectionGroups.set(name, existing?.groupId || transfers.find(other => other.groupName === name && (other.target || '') === target && !['done','cancelled'].includes(other.state))?.groupId || `folder:${Date.now()}:${Math.random()}`);
       t.groupId = selectionGroups.get(name); t.groupName = name;
     }
     if (!existing) transfers.push(t);
@@ -228,7 +229,7 @@ async function send(t) {
   let failures = 0;
   while (t.state === 'sending') {
     try {
-      const upload = await post('/api/uploads', {id:t.id,path:t.path,size:t.size,fingerprint:t.key});
+      const upload = await post('/api/uploads', {id:t.id,path:t.path,target:t.target || '',size:t.size,fingerprint:t.key});
       t.id = upload.id; t.offset = upload.offset; saveTransfer(t);
       if (t.state !== 'sending') return;
       if (upload.state !== 'done') {
@@ -276,7 +277,7 @@ function sendChunk(t, blob) {
 }
 function seconds(n) { if (!isFinite(n) || n < 1) return 'Finalizando'; if (n < 60) return `${Math.ceil(n)} s restantes`; if (n < 3600) return `${Math.ceil(n/60)} min restantes`; return `${(n/3600).toFixed(1).replace('.',',')} h restantes`; }
 function rowText(t) {
-  if (t.state === 'done') return 'Enviado · disponível na rede';
+  if (t.state === 'done') return t.target ? 'Enviado ao destino • aguarda recebimento' : 'Enviado · disponível na rede';
   if (t.state === 'paused') return 'Pausado · pronto para retomar';
   if (t.state === 'queued') return 'Na fila';
   if (t.error) return t.error;
@@ -287,7 +288,7 @@ function updateRow(t) {
   const group = t.displayGroup;
   if (!group?.row?.isConnected) return;
   const s = TransferGroups.summarize(group);
-  const label = s.state === 'done' ? 'Enviado · disponível na rede' : s.state === 'sending' ? (s.speed ? `${bytes(s.speed)}/s · ${seconds((s.size-s.sent)/s.speed)}` : 'Preparando envio…') : s.state === 'queued' ? 'Na fila' : s.state === 'reselect' ? 'Selecione a pasta original para retomar' : s.state === 'error' ? s.error : 'Pausado · pronto para retomar';
+  const label = s.state === 'done' ? (group.items.some(item => item.target) ? 'Enviado ao destino' : 'Enviado · disponível na rede') : s.state === 'sending' ? (s.speed ? `${bytes(s.speed)}/s · ${seconds((s.size-s.sent)/s.speed)}` : 'Preparando envio…') : s.state === 'queued' ? 'Na fila' : s.state === 'reselect' ? 'Selecione a pasta original para retomar' : s.state === 'error' ? s.error : 'Pausado · pronto para retomar';
   group.row.querySelector('.progress-fill').style.width = `${s.percent}%`;
   group.row.querySelector('.progress-track').setAttribute('aria-valuenow', s.percent);
   const starts = group.items.map(item => item.startedAt).filter(Boolean);

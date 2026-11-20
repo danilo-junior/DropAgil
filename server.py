@@ -245,7 +245,7 @@ class Handler(BaseHTTPRequestHandler):
         url = urlsplit(self.path)
         route, query, method = url.path, parse_qs(url.query), self.command
         arg = lambda key, default='': query.get(key, [default])[0]
-        if route in ('/', '/app.js', '/transfer-groups.js', '/style.css', '/favicon.svg') and method in ('GET', 'HEAD'):
+        if route in ('/', '/app.js', '/devices.js', '/transfer-groups.js', '/style.css', '/favicon.svg') and method in ('GET', 'HEAD'):
             file = BASE / 'public' / ('index.html' if route == '/' else route[1:])
             return self.reply(file.read_bytes(), content=mimetypes.guess_type(file.name)[0] or 'text/plain')
         if route == '/api/login' and method == 'POST':
@@ -422,6 +422,7 @@ class Handler(BaseHTTPRequestHandler):
                 relative = path.relative_to(base).as_posix()
                 db.execute('INSERT INTO uploads VALUES (?,?,?,?,?,?)', (uid, relative, size, 0, 'pending', fingerprint))
                 if target:
+                    db.execute('INSERT OR IGNORE INTO devices VALUES (?,?,?)',(identity,session['name'],0))
                     db.execute('INSERT INTO routing(upload_id,target,owner) VALUES (?,?,?)',(uid,target,identity))
             return self.reply({'id': uid, 'path': relative, 'size': size, 'offset': 0, 'state': 'pending'})
         match = re.fullmatch(r'/api/uploads/([a-f0-9]{32})(/complete)?', route)

@@ -1,8 +1,19 @@
 # DropAgíl
 
-Arquivos e pastas entre computador e celular, pela rede local. Interface em português, sem conta e sem serviços externos. O computador funciona como central: arquivos enviados por qualquer dispositivo ficam na pasta `Recebidos` e podem ser baixados pelos demais dispositivos que tenham o código.
+Arquivos e pastas entre computador e celular, pela rede local. Interface em português, sem conta e sem serviços externos. O computador funciona como central: envios para **Rede** ficam em `Recebidos`. Envios para um **dispositivo** aguardam o aceite do destinatário em uma área separada, sem aparecer na lista pública.
 
-## Novidades da versão 2
+## Novidades da versão 3
+
+- Identidade visual compartilhada no Android e na central Windows, com botão **Abrir página** em ambos.
+- Android com abas Transferir, Arquivos e Conexão. Ao compartilhar pela galeria, uma pequena janela permite escolher o destino; o envio segue pela notificação, sem abrir a tela principal quando já estiver pareado e com notificações permitidas.
+- **Enviar para**: escolha Rede ou um dispositivo disponível. O servidor no computador intermedeia a transferência e precisa permanecer ligado.
+- No Android de destino, ative **Receber arquivos neste celular**. Toque **Aceitar** ou **Recusar** na notificação. Os downloads vão para `Downloads/DropAgil`, em subpastas por arquivo para evitar sobrescritas. O recebimento deve ser reativado após fechar à força/reiniciar o celular; não é iniciado no boot.
+- No Windows, a bandeja fica disponível para receber e pede confirmação antes de salvar em Downloads/DropAgil. O menu de contexto abre uma seleção rápida de destino.
+- No navegador, use **Receber neste dispositivo** e mantenha a página aberta. Aceite pelo cartão que aparecer. Depois do download, use **Limpar entrega**; o navegador não informa com segurança ao site quando o download terminou.
+- A cópia temporária de uma entrega direta é removida ao recusar ou após confirmação de download dos apps nativos. Entregas sem resposta permanecem no computador aguardando o destinatário.
+- **Apagar** arquivos/pastas pela página ou pelo Android, com confirmação de exclusão permanente. Apaga somente a cópia da rede. Pastas com uploads pendentes são protegidas; conclua ou cancele os uploads primeiro.
+
+## Recursos de transferência
 
 - Pastas enviadas sem ZIP aparecem em **uma única linha**, com porcentagem calculada pelo total de bytes, contador de arquivos concluídos e controles da pasta inteira.
 - **Tempo decorrido**, tempo total ao concluir e estimativa restante. O tempo decorrido conta o período desde o início do envio, incluindo pausas; a estimativa depende da velocidade recente.
@@ -22,7 +33,7 @@ Os originais são preservados. O envio do Windows faz uma cópia para `Recebidos
 
 ## Android: compartilhar direto da Galeria
 
-Instale **DropAgil-Android.apk** (Android 10 ou superior). Ele também está disponível na página **Conectar dispositivo > Baixar aplicativo Android**. Na primeira abertura, informe endereço e código da central e toque em Conectar / parear. Depois basta selecionar fotos ou vídeos na Galeria, tocar Compartilhar e escolher **DropAgíl**: o envio é iniciado automaticamente.
+Instale **DropAgil-Android.apk** (Android 10 ou superior). Ele também está disponível na página **Conectar dispositivo > Baixar aplicativo Android**. Na primeira abertura, informe endereço e código da central e toque em Conectar computador. Depois selecione fotos ou vídeos na Galeria, toque Compartilhar > **DropAgíl** e escolha **Rede** ou o aparelho de destino.
 
 O pareamento persiste após reiniciar a central. Se o endereço IP do computador mudar, atualize a configuração do aplicativo. Dentro do app, abra Arquivos da rede para baixar diretamente para Downloads. Consulte `android/README.md` para detalhes, permissões e limitações do Android.
 
@@ -44,7 +55,7 @@ PC por cabo e celular por Wi-Fi funcionam juntos: ambos precisam estar na mesma 
 - **Sem duplicar arquivos grandes no PC:** mova os arquivos/pastas pelo Explorador para `Recebidos` e atualize a lista. Também é possível iniciar o sistema com `--data-dir` em outro disco. O programa compartilha apenas a subpasta `Recebidos` desse diretório.
 - **Pastas:** a estrutura dos arquivos selecionados é preservada; para baixar a pasta inteira, use **ZIP**. Ele é gerado durante o download, sem criar uma segunda cópia temporária. Pastas vazias não são enviadas pelo seletor do navegador. A seleção de pastas no celular depende do navegador; enviar um ZIP é uma alternativa.
 - Arquivos com nomes repetidos recebem um sufixo, sem substituir os existentes. Nomes incompatíveis com Windows são recusados com uma mensagem.
-- Para excluir ou organizar arquivos concluídos, use o Explorador no computador. O botão **Abrir pasta no computador** está na tela de arquivos acessada por localhost.
+- Para excluir arquivos ou pastas concluídos, use **Apagar** na página ou no Android. É uma exclusão permanente da cópia da rede, com confirmação. Para organizar pastas, também pode usar o Explorador no computador.
 
 ## Arquivos grandes e retomada
 
@@ -84,3 +95,5 @@ node --test tests/test_groups.cjs
 Os testes usam diretórios temporários e porta aleatória, sem alterar arquivos reais. Cobrem autenticação, proteção de caminhos, streaming, upload interrompido, retomada após recriar o estado do servidor, arquivos vazios, nomes repetidos, ZIP e downloads parciais. O teste de posições acima de 4 GB usa um arquivo simulado para não ocupar o disco; não substitui uma transferência real de vários gigabytes entre seus dispositivos.
 
 A versão 2 acrescenta testes do agrupamento e progresso por bytes, upload de pasta pelo cliente Windows e pareamento Android persistente/revogável. O APK é compilado, sua assinatura é verificada e os filtros de compartilhamento são conferidos no manifesto compilado. O fluxo da Galeria ainda precisa ser conferido no celular físico do usuário.
+
+A versão 3 também valida entrega privada entre três identidades, aceite obrigatório, recusa, isolamento do destinatário, download parcial, limpeza das cópias temporárias e recebimento retomável no Windows. O fluxo de notificações ainda precisa ser testado em Android físico.

@@ -19,6 +19,7 @@ import webbrowser
 BASE = Path(__file__).resolve().parent
 sys.path.insert(0,str(BASE / 'vendor'))
 from desktop_client import DesktopQueue, LocalAPI
+from desktop_receiver import DesktopReceiver
 
 PORT = 8788
 STATE = BASE / '.dropagil'
@@ -111,6 +112,7 @@ def run_desktop(background=False):
     TOKEN.write_text(token,'utf-8')
     jobs = DesktopQueue()
     events = queue.Queue()
+    receiver = DesktopReceiver(LocalAPI(),events)
 
     class IPCHandler(BaseHTTPRequestHandler):
         def log_message(self,*args): pass
@@ -125,7 +127,7 @@ def run_desktop(background=False):
                 if self.path == '/send':
                     paths = data.get('paths',[])
                     if not isinstance(paths,list) or not all(isinstance(p,str) for p in paths): raise ValueError()
-                    jobs.add(paths); events.put('show')
+                    events.put(('send',paths))
                 elif self.path in ('/show','/files','/choose-files','/choose-folder','/exit'):
                     events.put(self.path[1:])
                 elif self.path in ('/cancel','/pause','/resume'):
@@ -140,9 +142,9 @@ def run_desktop(background=False):
     threading.Thread(target=bridge.serve_forever,daemon=True).start()
     root = tk.Tk()
     root.title('DropAgíl • Central de transferências')
-    root.geometry(f'660x530+{max(0,root.winfo_screenwidth()-685)}+{max(0,root.winfo_screenheight()-620)}')
+    root.geometry(f'660x590+{max(0,root.winfo_screenwidth()-685)}+{max(0,root.winfo_screenheight()-680)}')
     root.configure(bg='#f5f7f2')
-    root.minsize(620,490)
+    root.minsize(620,550)
     root.protocol('WM_DELETE_WINDOW',root.withdraw)
     style = ttk.Style(root)
     style.theme_use('clam')
@@ -168,6 +170,33 @@ def run_desktop(background=False):
     subtitle = ttk.Label(frame,text='Escolha arquivos ou use o botão direito no Explorador.',wraplength=590); subtitle.pack(anchor='w',pady=(5,12))
     progress = ttk.Progressbar(frame,maximum=100); progress.pack(fill='x')
     timing = ttk.Label(frame,text='0%',foreground='#687b64'); timing.pack(anchor='w',pady=(7,14))
+    destination_row=ttk.Frame(frame);destination_row.pack(fill='x',pady=(0,12))
+    ttk.Label(destination_row,text='Enviar para:').pack(side='left',padx=(0,10))
+    destination=ttk.Combobox(destination_row,state='readonly',values=['Rede • todos os dispositivos']);destination.current(0);destination.pack(side='left',fill='x',expand=True)
+    destination_ids=['']
+    def refresh_destinations():
+        selected=destination_ids[destination.current()] if 0 <= destination.current() < len(destination_ids) else ''
+        devices=list(receiver.devices)
+        ids=['']+[device['id'] for device in devices]
+        labels=['Rede • todos os dispositivos']+[device['name'] for device in devices]
+        if selected and selected not in ids:
+            ids.append(selected);labels.append('Destino salvo • indisponível agora')
+        destination_ids[:]=ids;destination['values']=labels;destination.current(ids.index(selected))
+    ttk.Button(destination_row,text='Atualizar',command=refresh_destinations).pack(side='right',padx=(6,0))
+    def enqueue(paths):
+        jobs.add(paths,target=destination_ids[max(0,destination.current())]);root.deiconify()
+    def share_prompt(paths):
+        refresh_destinations()
+        popup=tk.Toplevel(root);popup.title('Enviar com DropAgíl');popup.configure(bg='#f5f7f2');popup.transient(root)
+        panel=ttk.Frame(popup,padding=22);panel.pack(fill='both',expand=True)
+        ttk.Label(panel,text='Enviar para…',font=('Segoe UI',16,'bold')).pack(anchor='w')
+        ttk.Label(panel,text=f'{len(paths)} item(ns) selecionado(s)').pack(anchor='w',pady=8)
+        select=ttk.Combobox(panel,state='readonly',values=list(destination['values']),width=42);select.current(0);select.pack(fill='x',pady=10)
+        choices=list(destination_ids)
+        def send(): jobs.add(paths,target=choices[max(0,select.current())]);popup.destroy()
+        ttk.Button(panel,text='Enviar',style='Primary.TButton',command=send).pack(side='right')
+        ttk.Button(panel,text='Cancelar',command=popup.destroy).pack(side='right',padx=6)
+        popup.grab_set()
     table_frame=ttk.Frame(frame);table_frame.pack(fill='both',expand=True)
     table = ttk.Treeview(table_frame,columns=('progress','state','time'),show='tree headings',height=4)
     table.heading('#0',text='Arquivo / pasta'); table.column('#0',width=250,minwidth=150)
@@ -179,10 +208,10 @@ def run_desktop(background=False):
     actions = ttk.Frame(frame); actions.pack(fill='x',pady=(14,0))
     def choose_files():
         paths = filedialog.askopenfilenames(parent=root,title='Enviar arquivos via DropAgíl')
-        if paths: jobs.add(paths); root.deiconify()
+        if paths: enqueue(paths)
     def choose_folder():
         path = filedialog.askdirectory(parent=root,title='Enviar pasta via DropAgíl')
-        if path: jobs.add([path]); root.deiconify()
+        if path: enqueue([path])
     ttk.Button(actions,text='Enviar arquivos',style='Primary.TButton',command=choose_files).pack(side='left')
     ttk.Button(actions,text='Enviar pasta',command=choose_folder).pack(side='left',padx=4)
     ttk.Button(actions,text='Pausar',command=lambda:jobs.control('pause')).pack(side='left')
@@ -214,6 +243,17 @@ def run_desktop(background=False):
         try:
             while True:
                 name = events.get_nowait()
+                if isinstance(name,tuple):
+                    kind,payload=name
+                    if kind=='send': root.deiconify();root.lift();share_prompt(payload)
+                    elif kind=='incoming':
+                        tray.notify(f'{len(payload)} arquivo(s) aguardando sua confirmação.','Receber arquivos?')
+                        names='\n'.join(item['path'] for item in payload[:5])
+                        accept=messagebox.askyesno('Receber pelo DropAgíl?',f'Receber {len(payload)} arquivo(s)?\n\n{names}\n\nSerão salvos em Downloads/DropAgil.',parent=root)
+                        receiver.respond(payload,accept)
+                    elif kind=='received': tray.notify(Path(payload).name+' salvo em Downloads/DropAgil.','Arquivo recebido')
+                    elif kind=='receive-error': messagebox.showerror('Recebimento interrompido',payload,parent=root)
+                    continue
                 if name == 'show': root.deiconify(); root.lift()
                 elif name == 'choose-files': choose_files()
                 elif name == 'choose-folder': choose_folder()
@@ -222,7 +262,7 @@ def run_desktop(background=False):
                 elif name == 'connect': webbrowser.open('http://localhost:8787/#connect')
                 elif name == 'received': os.startfile(BASE / 'Recebidos')
                 elif name == 'exit':
-                    jobs.control('pause'); jobs.close(); bridge.shutdown(); tray.stop(); root.destroy(); return
+                    receiver.close(); jobs.control('pause'); jobs.close(); bridge.shutdown(); tray.stop(); root.destroy(); return
         except queue.Empty: pass
         snapshot = jobs.snapshot()
         shown = [j for j in snapshot if j['state'] != 'cancelled']
@@ -253,7 +293,7 @@ def run_desktop(background=False):
             if job['state'] == 'error' and active and job['id'] == active[0]['id']: subtitle['text'] = job['error']
             if job['state'] == 'done' and job['id'] not in seen_completed:
                 seen_completed.add(job['id'])
-                tray.notify(job['name'] + ' está disponível na rede.','Envio concluído')
+                tray.notify(job['name'] + (' aguarda aceite no destino.' if job.get('target') else ' está disponível na rede.'),'Envio concluído')
         root.after(500,tick)
     if background: root.withdraw()
     root.after(100,tick)
