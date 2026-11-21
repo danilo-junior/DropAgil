@@ -25,6 +25,7 @@ from desktop_pages import DesktopPages
 PORT = 8788
 STATE = BASE / '.dropagil'
 TOKEN = STATE / 'desktop-token'
+AUTOSTART_DISABLED = STATE / 'startup-disabled'
 PYTHONW = str(Path(sys.executable).with_name('pythonw.exe'))
 CREATE_NO_WINDOW = 0x08000000
 
@@ -90,6 +91,25 @@ def install(remove=False):
                 with winreg.CreateKey(winreg.HKEY_CURRENT_USER,keypath+r'\command') as key:
                     winreg.SetValueEx(key,'',0,winreg.REG_SZ,subprocess.list2cmdline(desktop_command(flag))+' "%1"')
     ctypes.windll.shell32.SHChangeNotify(0x08000000,0,None,None)
+    if remove:
+        AUTOSTART_DISABLED.write_text('disabled by user', encoding='utf-8')
+    else:
+        AUTOSTART_DISABLED.unlink(missing_ok=True)
+
+
+def ensure_autostart():
+    """Register startup on the first normal launch, unless the user removed it."""
+    if AUTOSTART_DISABLED.exists():
+        return
+    import winreg
+    expected = subprocess.list2cmdline(desktop_command('--background'))
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r'Software\Microsoft\Windows\CurrentVersion\Run') as key:
+            actual, _ = winreg.QueryValueEx(key, 'DropAgil')
+    except FileNotFoundError:
+        actual = None
+    if actual != expected:
+        install()
 
 
 
@@ -106,6 +126,11 @@ def run_desktop(background=False):
         if not background:
             ipc('show')
         return
+    try:
+        ensure_autostart()
+    except OSError as error:
+        with (STATE / 'startup-error.log').open('a', encoding='utf-8') as out:
+            out.write(str(error) + '\n')
     ensure_server()
     token = secrets.token_urlsafe(32)
     TOKEN.write_text(token,'utf-8')
@@ -140,6 +165,7 @@ def run_desktop(background=False):
     bridge = ThreadingHTTPServer(('127.0.0.1',PORT),IPCHandler)
     threading.Thread(target=bridge.serve_forever,daemon=True).start()
     root = tk.Tk()
+    if background: root.withdraw()
     root.title('DropAgíl — Desktop')
     root.geometry('980x740')
     root.configure(bg='#f5f7f2')
@@ -159,15 +185,21 @@ def run_desktop(background=False):
     style.configure('Treeview.Heading',font=('Segoe UI',9,'bold'),background='#edf2e7',foreground='#687b64',padding=(8,8),borderwidth=0)
     style.map('Treeview',background=[('selected','#ddf5b0')],foreground=[('selected','#173f35')])
     brand=tk.Frame(root,bg='#173f35',padx=24,pady=18);brand.pack(fill='x')
-    tk.Label(brand,text='d↗',font=('Segoe UI',28,'bold'),fg='#ddf5b0',bg='#173f35').pack(side='left',padx=(0,12))
+    mark=tk.Canvas(brand,width=48,height=48,bg='#173f35',highlightthickness=0);mark.pack(side='left',padx=(0,14))
+    mark.create_oval(5,13,34,42,outline='#ddf5b0',width=5)
+    mark.create_line(34,5,34,40,fill='#ddf5b0',width=5,capstyle='round')
+    mark.create_oval(38,4,44,10,fill='#ddf5b0',outline='')
     labels=tk.Frame(brand,bg='#173f35');labels.pack(side='left')
     tk.Label(labels,text='DropAgíl',font=('Segoe UI',21,'bold'),fg='white',bg='#173f35').pack(anchor='w')
-    tk.Label(labels,text='Seus arquivos. Sua rede.',font=('Segoe UI',10),fg='#ddf5b0',bg='#173f35').pack(anchor='w')
+    tk.Label(labels,text='PERTINHO. RAPIDINHO.',font=('Segoe UI',9,'bold'),fg='#ddf5b0',bg='#173f35').pack(anchor='w')
     ttk.Button(brand,text='Abrir página ↗',command=lambda:webbrowser.open('http://localhost:8787/')).pack(side='right')
+    tk.Label(brand,text='●  REDE LOCAL',font=('Segoe UI',9,'bold'),fg='#ddf5b0',bg='#173f35').pack(side='right',padx=(0,20))
+    tk.Frame(root,bg='#ddf5b0',height=4).pack(fill='x')
     style.configure('TNotebook',background='#f5f7f2',borderwidth=0)
     style.configure('TNotebook.Tab',font=('Segoe UI',11),padding=(22,12))
     tabs=ttk.Notebook(root);tabs.pack(fill='both',expand=True,padx=16,pady=16)
     frame=ttk.Frame(tabs,padding=(24,18));tabs.add(frame,text='Transferências')
+    ttk.Label(frame,text='01  /  SEUS ENVIOS',font=('Segoe UI',9,'bold'),foreground='#7d9b55').pack(anchor='w',pady=(0,8))
     heading = ttk.Label(frame,text='Tudo pronto para enviar',font=('Segoe UI',16,'bold')); heading.pack(anchor='w')
     subtitle = ttk.Label(frame,text='Escolha arquivos ou use o botão direito no Explorador.',wraplength=590); subtitle.pack(anchor='w',pady=(5,12))
     progress = ttk.Progressbar(frame,maximum=100); progress.pack(fill='x')
@@ -198,9 +230,30 @@ def run_desktop(background=False):
             chosen=list(dict.fromkeys(shell_paths));shell_paths.clear();shell_timer=None
             share_prompt(chosen)
         shell_timer=root.after(350,open_choice)
+    def queue_shell_share(paths,target):
+        try:
+            if not jobs.add(paths,target=target):
+                tray.notify('Os itens selecionados não estão disponíveis para envio.','Falha no envio')
+        except Exception as error:
+            tray.notify(str(error) or 'Não foi possível iniciar a transferência.','Falha no envio')
+    def compact_popup(title,width=440,height=240):
+        popup=tk.Toplevel(root)
+        popup.withdraw();popup.title(title);popup.configure(bg='#f5f7f2');popup.resizable(False,False)
+        popup.iconbitmap(str(STATE / 'dropagil.ico'))
+        rect=wintypes.RECT()
+        foreground=ctypes.windll.user32.GetForegroundWindow()
+        if foreground and ctypes.windll.user32.GetWindowRect(foreground,ctypes.byref(rect)):
+            x=(rect.left+rect.right-width)//2;y=(rect.top+rect.bottom-height)//2
+        else:
+            x=(root.winfo_screenwidth()-width)//2;y=(root.winfo_screenheight()-height)//2
+        popup.geometry(f'{width}x{height}{x:+d}{y:+d}')
+        popup.attributes('-topmost',True)
+        return popup
+    def reveal_popup(popup):
+        popup.deiconify();popup.lift();popup.grab_set();popup.focus_force()
     def share_prompt(paths):
         refresh_destinations()
-        popup=tk.Toplevel(root);popup.title('Enviar com DropAgíl');popup.configure(bg='#f5f7f2');popup.transient(root)
+        popup=compact_popup('Enviar com DropAgíl',440,225)
         panel=ttk.Frame(popup,padding=22);panel.pack(fill='both',expand=True)
         ttk.Label(panel,text='Enviar para…',font=('Segoe UI',16,'bold')).pack(anchor='w')
         ttk.Label(panel,text=f'{len(paths)} item(ns) selecionado(s)').pack(anchor='w',pady=8)
@@ -208,12 +261,31 @@ def run_desktop(background=False):
         if not choices:
             ttk.Label(panel,text='Nenhum dispositivo disponível. Abra o DropAgíl no celular.').pack(pady=12)
             ttk.Button(panel,text='Tentar novamente',command=lambda:(popup.destroy(),share_prompt(paths))).pack()
+            reveal_popup(popup)
             return
         select=ttk.Combobox(panel,state='readonly',values=list(destination['values'])[1:],width=42);select.current(0);select.pack(fill='x',pady=10)
-        def send(): jobs.add(paths,target=choices[max(0,select.current())]);popup.destroy()
+        def send():
+            queue_shell_share(paths,choices[max(0,select.current())])
+            popup.destroy()
         ttk.Button(panel,text='Enviar',style='Primary.TButton',command=send).pack(side='right')
         ttk.Button(panel,text='Cancelar',command=popup.destroy).pack(side='right',padx=6)
-        popup.grab_set()
+        reveal_popup(popup)
+    def offer_receive(files):
+        popup=compact_popup('Receber pelo DropAgíl?',460,310)
+        panel=ttk.Frame(popup,padding=22);panel.pack(fill='both',expand=True)
+        ttk.Label(panel,text='Receber arquivos?',font=('Segoe UI',17,'bold')).pack(anchor='w')
+        names='\n'.join(item['path'][:70]+('…' if len(item['path'])>70 else '') for item in files[:3])
+        if len(files)>3:names+=f'\n… e mais {len(files)-3} arquivo(s)'
+        ttk.Label(panel,text=f'{len(files)} arquivo(s) chegando de outro dispositivo.',foreground='#687b64').pack(anchor='w',pady=(8,10))
+        ttk.Label(panel,text=names,wraplength=410).pack(anchor='w')
+        ttk.Label(panel,text='Serão salvos em Downloads/DropAgil.',foreground='#687b64').pack(anchor='w',pady=(10,12))
+        buttons=ttk.Frame(panel);buttons.pack(side='bottom',fill='x')
+        def respond(accept):
+            popup.destroy();receiver.respond(files,accept)
+        ttk.Button(buttons,text='Aceitar',style='Primary.TButton',command=lambda:respond(True)).pack(side='right')
+        ttk.Button(buttons,text='Recusar',command=lambda:respond(False)).pack(side='right',padx=8)
+        popup.protocol('WM_DELETE_WINDOW',lambda:respond(False))
+        reveal_popup(popup)
     table_frame=ttk.Frame(frame);table_frame.pack(fill='both',expand=True)
     table = ttk.Treeview(table_frame,columns=('progress','state','time'),show='tree headings',height=4)
     table.heading('#0',text='Arquivo / pasta'); table.column('#0',width=250,minwidth=150)
@@ -256,7 +328,7 @@ def run_desktop(background=False):
         pystray.MenuItem('Cancelar toda a fila',lambda *_:jobs.control('cancel')),
         pystray.MenuItem('Sair da bandeja',event('exit'))))
     tray.run_detached()
-    seen_completed = set(j['id'] for j in jobs.snapshot() if j['state'] == 'done')
+    seen_terminal = {j['id'] for j in jobs.snapshot() if j['state'] in ('done','error')}
     def tick():
         try:
             while True:
@@ -264,15 +336,14 @@ def run_desktop(background=False):
                 if isinstance(name,tuple):
                     kind,payload=name
                     if kind=='ui': payload()
-                    elif kind=='send-network': jobs.add(payload,target='');root.deiconify();tabs.select(frame)
-                    elif kind in ('send','send-device'): root.deiconify();root.lift();queue_device_share(payload)
+                    elif kind=='send-network': queue_shell_share(payload,'')
+                    elif kind in ('send','send-device'):
+                        root.withdraw();queue_device_share(payload)
                     elif kind=='incoming':
                         tray.notify(f'{len(payload)} arquivo(s) aguardando sua confirmação.','Receber arquivos?')
-                        names='\n'.join(item['path'] for item in payload[:5])
-                        accept=messagebox.askyesno('Receber pelo DropAgíl?',f'Receber {len(payload)} arquivo(s)?\n\n{names}\n\nSerão salvos em Downloads/DropAgil.',parent=root)
-                        receiver.respond(payload,accept)
+                        offer_receive(payload)
                     elif kind=='received': tray.notify(Path(payload).name+' salvo em Downloads/DropAgil.','Arquivo recebido')
-                    elif kind=='receive-error': messagebox.showerror('Recebimento interrompido',payload,parent=root)
+                    elif kind=='receive-error': tray.notify(payload,'Falha no recebimento')
                     continue
                 if name == 'show': root.deiconify(); root.lift()
                 elif name == 'choose-files': choose_files()
@@ -305,6 +376,7 @@ def run_desktop(background=False):
         current = set(table.get_children()); wanted = {j['id'] for j in shown[-100:]}
         for ident in current-wanted: table.delete(ident)
         for job in shown[-100:]:
+            if job['state'] not in ('done','error'): seen_terminal.discard(job['id'])
             amount = min(99,int(job['sent']/job['total']*100)) if job['total'] else 0
             if job['state'] == 'done': amount = 100
             seconds = max(0,int((job.get('finished') or now) - (job.get('started') or now)))
@@ -312,9 +384,12 @@ def run_desktop(background=False):
             if job['id'] in current: table.item(job['id'],text=job['name'],values=values)
             else: table.insert('',tk.END,iid=job['id'],text=job['name'],values=values)
             if job['state'] == 'error' and active and job['id'] == active[0]['id']: subtitle['text'] = job['error']
-            if job['state'] == 'done' and job['id'] not in seen_completed:
-                seen_completed.add(job['id'])
-                tray.notify(job['name'] + (' aguarda aceite no destino.' if job.get('target') else ' está disponível na rede.'),'Envio concluído')
+            if job['state'] in ('done','error') and job['id'] not in seen_terminal:
+                seen_terminal.add(job['id'])
+                if job['state'] == 'done':
+                    tray.notify(job['name'] + (' aguarda aceite no destino.' if job.get('target') else ' está disponível na rede.'),'Envio concluído')
+                else:
+                    tray.notify(job['name'] + ': ' + (job.get('error') or 'Verifique a transferência.'),'Falha no envio')
         root.after(500,tick)
     if background: root.withdraw()
     root.after(100,tick)

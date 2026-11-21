@@ -2,6 +2,7 @@
 import argparse
 from contextlib import contextmanager
 import hashlib
+import html
 import http.cookies
 import io
 import json
@@ -21,6 +22,8 @@ import zipfile
 
 from runtime_paths import BASE, RESOURCES
 CHUNK = 8 * 1024 * 1024
+QUICK_SHARE_SECONDS = 3600
+QUICK_TOKEN = re.compile(r'[A-Za-z0-9_-]{43}')
 
 
 class Problem(Exception):
@@ -54,6 +57,7 @@ class App:
             db.execute('CREATE TABLE IF NOT EXISTS pairings (digest TEXT PRIMARY KEY, name TEXT, created REAL)')
             db.execute('CREATE TABLE IF NOT EXISTS devices (id TEXT PRIMARY KEY, name TEXT, seen REAL)')
             db.execute("CREATE TABLE IF NOT EXISTS routing (upload_id TEXT PRIMARY KEY, target TEXT, owner TEXT, status TEXT DEFAULT 'uploading')")
+            db.execute('CREATE TABLE IF NOT EXISTS quick_shares (digest TEXT PRIMARY KEY, path TEXT, size INTEGER, mtime_ns INTEGER, inode INTEGER, expires REAL)')
 
     @contextmanager
     def db(self):
@@ -68,6 +72,40 @@ class App:
     def lock(self, uid):
         with self.guard:
             return self.locks.setdefault(uid, threading.Lock())
+
+    def create_quick_share(self, raw):
+        if not self.ips:
+            raise Problem('Não há endereço de rede disponível para o QR Code.', 503)
+        path = self.path(raw)
+        if not path.is_file():
+            raise Problem('Escolha um arquivo da rede para gerar o QR Code.', 404)
+        stat = path.stat()
+        token = secrets.token_urlsafe(32)
+        expires = time.time() + QUICK_SHARE_SECONDS
+        with self.db() as db:
+            db.execute('DELETE FROM quick_shares WHERE expires<?', (time.time(),))
+            db.execute('INSERT INTO quick_shares VALUES (?,?,?,?,?,?)',
+                       (hashlib.sha256(token.encode()).hexdigest(), path.relative_to(self.shared).as_posix(),
+                        stat.st_size, stat.st_mtime_ns, stat.st_ino, expires))
+        return {'token': token, 'expires': expires,
+                'urls': [f'http://{ip}:{self.port}/quick/{token}' for ip in self.ips]}
+
+    def quick_share_file(self, token):
+        if not QUICK_TOKEN.fullmatch(token):
+            raise Problem('Link de download inválido ou expirado.', 404)
+        with self.db() as db:
+            row = db.execute('SELECT * FROM quick_shares WHERE digest=?',
+                             (hashlib.sha256(token.encode()).hexdigest(),)).fetchone()
+        if not row or row['expires'] <= time.time():
+            raise Problem('Link de download inválido ou expirado.', 404)
+        path = self.path(row['path'])
+        if not path.is_file():
+            raise Problem('Arquivo não está mais disponível.', 404)
+        stat = path.stat()
+        expected = (row['size'], row['mtime_ns'], row['inode'])
+        if (stat.st_size, stat.st_mtime_ns, stat.st_ino) != expected:
+            raise Problem('O arquivo mudou. Gere outro QR Code.', 404)
+        return path, expected
 
     def path(self, raw, allow_root=False, base=None):
         base = base or self.shared
@@ -206,7 +244,9 @@ class Handler(BaseHTTPRequestHandler):
         origin = self.headers.get('Origin')
         if origin and origin != 'http://' + host:
             raise Problem('Origem não permitida.', 403)
-        if self.headers.get('Sec-Fetch-Site') == 'cross-site':
+        guest_link = (self.command in ('GET','HEAD') and
+                      re.fullmatch(r'/quick/[A-Za-z0-9_-]{43}(?:/download)?', urlsplit(self.path).path))
+        if self.headers.get('Sec-Fetch-Site') == 'cross-site' and not guest_link:
             raise Problem('Origem não permitida.', 403)
 
     def do_GET(self):
@@ -265,8 +305,36 @@ class Handler(BaseHTTPRequestHandler):
             if self.client_address[0] != '127.0.0.1':
                 raise Problem('Disponível apenas no computador servidor.', 403)
             return self.signin('Computador principal')
+        quick = re.fullmatch(r'/quick/([A-Za-z0-9_-]{43})(/download)?', route)
+        if quick and method in ('GET', 'HEAD'):
+            token, download = quick.groups()
+            path, expected = self.app.quick_share_file(token)
+            if download:
+                return self.download(path, expected=expected)
+            filename = html.escape(path.name, quote=True)
+            size = expected[0]
+            size_label = f'{size:,}'.replace(',', '.')
+            page = f'''<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow">
+<title>Baixar {filename} · DropAgíl</title><link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/style.css"></head><body class="quick-page"><main class="quick-card">
+<div class="quick-mark">d<span>↗</span></div><p class="quick-kicker">DROPAGÍL · REDE LOCAL</p>
+<h1>Um arquivo pra você.</h1><p>Alguém nesta rede compartilhou:</p>
+<div class="quick-file"><strong>{filename}</strong><small>{size_label} bytes</small></div>
+<a class="quick-download" href="/quick/{token}/download">Baixar arquivo ↓</a>
+<p class="quick-note">Este link é temporário. O computador que compartilhou precisa estar ligado.</p>
+</main></body></html>'''
+            return self.reply(page.encode('utf-8'), content='text/html; charset=utf-8')
         session = self.session()
         identity = self.device_identity()
+        if route == '/api/quick-share' and method == 'POST':
+            return self.reply(self.app.create_quick_share(self.body().get('path')))
+        revoke = re.fullmatch(r'/api/quick-share/([A-Za-z0-9_-]{43})', route)
+        if revoke and method == 'DELETE':
+            with self.app.db() as db:
+                db.execute('DELETE FROM quick_shares WHERE digest=?',
+                           (hashlib.sha256(revoke[1].encode()).hexdigest(),))
+            return self.reply({'ok': True})
         if route == '/api/devices' and method in ('GET','POST'):
             with self.app.db() as db:
                 if method == 'POST':
@@ -350,8 +418,19 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply({'ok': True})
         if route == '/api/qr' and method == 'GET':
             target = arg('url')
-            if target not in [f'http://{ip}:{self.app.port}' for ip in self.app.ips]:
-                raise Problem('Endereço inválido.')
+            allowed = target in [f'http://{ip}:{self.app.port}' for ip in self.app.ips]
+            if not allowed:
+                try:
+                    parsed = urlsplit(target)
+                    port = parsed.port
+                except ValueError:
+                    raise Problem('Endereço inválido.')
+                token_match = re.fullmatch(r'/quick/([A-Za-z0-9_-]{43})', parsed.path)
+                if (parsed.scheme != 'http' or parsed.hostname not in self.app.ips or
+                    parsed.netloc != f'{parsed.hostname}:{self.app.port}' or
+                    port != self.app.port or parsed.query or parsed.fragment or not token_match):
+                    raise Problem('Endereço inválido.')
+                self.app.quick_share_file(token_match[1])
             try:
                 import qrcode
                 import qrcode.image.svg
@@ -398,6 +477,19 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply({'items': sorted(items, key=lambda x: (not x['directory'], x['name'].lower()))})
         if route == '/api/download' and method in ('GET', 'HEAD'):
             return self.download(self.app.path(arg('path')))
+        if route == '/api/android-update' and method == 'GET':
+            apk = BASE / 'DropAgil-Android.apk'
+            metadata = BASE / 'DropAgil-Android.version.json'
+            try:
+                info = json.loads(metadata.read_text('utf-8'))
+                size = apk.stat().st_size
+                digest = hashlib.sha256(apk.read_bytes()).hexdigest()
+                if (not isinstance(info, dict) or info.get('size') != size or info.get('sha256') != digest or
+                    type(info.get('versionCode')) is not int or info['versionCode'] < 1):
+                    raise ValueError('Metadados incompatíveis com o APK.')
+            except (OSError, ValueError, TypeError):
+                raise Problem('APK de atualização indisponível ou incompleto.', 503)
+            return self.reply({**info, 'url': '/api/android-apk'})
         if route == '/api/android-apk' and method in ('GET','HEAD'):
             return self.download(BASE / 'DropAgil-Android.apk')
         if route == '/api/zip' and method == 'GET':
@@ -521,11 +613,13 @@ class Handler(BaseHTTPRequestHandler):
     def attachment(self, name):
         self.send_header('Content-Disposition', "attachment; filename*=UTF-8''" + quote(name, safe=''))
 
-    def download(self, path):
+    def download(self, path, expected=None):
         if not path.is_file():
             raise Problem('Arquivo não encontrado.', 404)
         with path.open('rb') as stream:
             stat = os.fstat(stream.fileno())
+            if expected and (stat.st_size, stat.st_mtime_ns, stat.st_ino) != expected:
+                raise Problem('O arquivo mudou. Gere outro QR Code.', 404)
             size, start, end = stat.st_size, 0, stat.st_size - 1
             etag = f'"{stat.st_mtime_ns:x}-{size:x}"'
             partial = self.headers.get('Range')

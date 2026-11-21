@@ -23,7 +23,7 @@ const paths = {
 const $ = id => document.getElementById(id);
 function icon(name) { return `<svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="${paths[name] || paths.file}"/></svg>`; }
 document.querySelectorAll('[data-icon]').forEach(el => el.innerHTML = icon(el.dataset.icon));
-document.querySelector('.version').textContent = 'DropAgíl · versão 4.0';
+document.querySelector('.version').textContent = 'DropAgíl · versão 4.2';
 const androidLink = document.createElement('a');
 androidLink.className = 'button primary'; androidLink.href = '/api/android-apk'; androidLink.textContent = 'Baixar aplicativo Android'; androidLink.setAttribute('download','DropAgil-Android.apk');
 document.querySelector('.steps-card').append(androidLink);
@@ -149,6 +149,13 @@ function renderFiles() {
     row.innerHTML = `<span class="file-symbol ${file.directory ? 'directory':''}">${icon(file.directory ? 'folder':'file')}</span><div class="file-details"><${file.directory ? 'button':'span'} class="file-name" title="${escapeHTML(file.name)}">${escapeHTML(file.name)}</${file.directory ? 'button':'span'}><small>${file.directory ? 'Pasta':bytes(file.size)} · ${new Date(file.modified * 1000).toLocaleDateString('pt-BR')}</small></div><a class="button secondary" href="/api/${file.directory ? 'zip':'download'}?path=${encodeURIComponent(file.path)}" download>${icon('download')}${file.directory ? 'ZIP':'Baixar'}</a>`;
     if (file.directory) row.querySelector('.file-name').onclick = () => { currentPath = file.path; $('fileSearch').value = ''; loadFiles(); };
     if (file.directory) row.querySelector('a').onclick = () => toast('Preparando o ZIP direto no download. Pastas grandes podem levar um tempo.');
+    if (!file.directory) {
+      const quick = document.createElement('button');
+      quick.className = 'button secondary quick-action'; quick.innerHTML = `${icon('qr')} QR rápido`;
+      quick.setAttribute('aria-label', `Criar QR Code para ${file.name}`);
+      quick.onclick = () => showQuickShare(file, quick);
+      row.append(quick);
+    }
     const remove = document.createElement('button');
     remove.className = 'button secondary danger'; remove.textContent = 'Apagar';
     remove.setAttribute('aria-label', `Apagar ${file.name}`);
@@ -166,6 +173,40 @@ function renderFiles() {
   });
 }
 $('refreshFiles').onclick = () => loadFiles(); $('fileSearch').oninput = renderFiles;
+let quickToken = '';
+async function showQuickShare(file, button) {
+  button.disabled = true;
+  try {
+    const share = await post('/api/quick-share', {path:file.path});
+    quickToken = share.token;
+    $('quickFileName').textContent = file.name;
+    $('quickAddress').replaceChildren(...share.urls.map(url => new Option(url, url)));
+    if (share.urls.includes(location.origin + `/quick/${share.token}`)) $('quickAddress').value = location.origin + `/quick/${share.token}`;
+    $('quickExpiry').textContent = `Disponível até ${new Date(share.expires * 1000).toLocaleTimeString('pt-BR', {hour:'2-digit',minute:'2-digit'})}. Qualquer pessoa com o QR Code pode baixar este arquivo até lá.`;
+    updateQuickQr(); $('quickShareDialog').showModal();
+  } catch (error) { toast(error.message); }
+  finally { button.disabled = false; }
+}
+function updateQuickQr() {
+  $('quickQrError').hidden = true; $('quickQrImage').hidden = false;
+  $('quickQrImage').src = `/api/qr?url=${encodeURIComponent($('quickAddress').value)}`;
+}
+$('quickAddress').onchange = updateQuickQr;
+$('quickQrImage').onerror = () => { $('quickQrImage').hidden = true; $('quickQrError').hidden = false; };
+$('closeQuickShare').onclick = () => $('quickShareDialog').close();
+$('copyQuickShare').onclick = async () => {
+  const url = $('quickAddress').value;
+  try {
+    if (navigator.clipboard && window.isSecureContext) await navigator.clipboard.writeText(url);
+    else { const field = document.createElement('textarea'); field.value = url; document.body.append(field); field.select(); if (!document.execCommand('copy')) throw new Error(); field.remove(); }
+    toast('Endereço de download copiado.');
+  } catch { toast(`Compartilhe: ${url}`); }
+};
+$('revokeQuickShare').onclick = async () => {
+  if (!quickToken) return;
+  try { await api('/api/quick-share/' + quickToken, {method:'DELETE'}); quickToken = ''; $('quickShareDialog').close(); toast('Link encerrado.'); }
+  catch (error) { toast(error.message); }
+};
 $('chooseFiles').onclick = () => $('fileInput').click();
 $('chooseFolder').onclick = () => $('folderInput').click();
 for (const id of ['fileInput','folderInput']) $(id).onchange = () => { enqueue([...$(id).files].map(file => ({file, path:file.webkitRelativePath || file.name}))); $(id).value = ''; };

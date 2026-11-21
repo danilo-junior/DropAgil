@@ -10,6 +10,7 @@ import time
 import unittest
 from unittest.mock import patch
 from urllib.parse import quote
+from urllib.parse import urlsplit
 import zipfile
 
 from server import App, Handler, ThreadingHTTPServer, CHUNK
@@ -79,6 +80,56 @@ class TransferTests(unittest.TestCase):
         self.assertEqual(self.request('POST', '/api/login', {'pin':'123456','name':'Celular'}, auth=False)[0], 200)
         self.assertEqual(self.request('POST', '/api/local-login', {}, {'Origin':'https://evil.test'}, auth=False)[0], 403)
         self.assertEqual(self.request('GET', '/api/status', headers={'Host':'evil.test'})[0], 403)
+
+    def test_quick_share_guest_download_expiry_and_revoke(self):
+        file = self.app.shared / 'visita.txt'
+        file.write_bytes(b'arquivo para visita')
+        previous_ips = self.app.ips
+        self.app.ips = ['127.0.0.1']
+        try:
+            self.assertEqual(self.request('POST','/api/quick-share',{'path':'visita.txt'},auth=False)[0],401)
+            self.assertEqual(self.request('POST','/api/quick-share',{'path':'..'})[0],400)
+            code, _, data = self.request('POST','/api/quick-share',{'path':'visita.txt'})
+            self.assertEqual(code,200)
+            guest_path = urlsplit(data['urls'][0]).path
+            self.assertEqual(self.request('GET',guest_path,auth=False)[0],200)
+            self.assertEqual(self.request('GET',guest_path,headers={'Sec-Fetch-Site':'cross-site'},auth=False)[0],200)
+            self.assertIn(b'visita.txt',self.request('GET',guest_path,auth=False)[2])
+            self.assertEqual(self.request('GET',guest_path+'/download',auth=False)[2],b'arquivo para visita')
+            code, headers, body = self.request('GET',guest_path+'/download',headers={'Range':'bytes=0-6'},auth=False)
+            self.assertEqual((code,body),(206,b'arquivo'))
+            self.assertEqual(self.request('GET','/api/qr?url='+quote(data['urls'][0],safe=''))[0],200)
+            self.assertEqual(self.request('GET','/quick/'+'x'*43,auth=False)[0],404)
+            file.write_bytes('conteúdo alterado'.encode())
+            self.assertEqual(self.request('GET',guest_path+'/download',auth=False)[0],404)
+            file.write_bytes(b'novo arquivo')
+            fresh = self.request('POST','/api/quick-share',{'path':'visita.txt'})[2]
+            with self.app.db() as db:
+                db.execute('UPDATE quick_shares SET expires=0 WHERE digest=?',
+                           (hashlib.sha256(fresh['token'].encode()).hexdigest(),))
+            self.assertEqual(self.request('GET',urlsplit(fresh['urls'][0]).path,auth=False)[0],404)
+            fresh = self.request('POST','/api/quick-share',{'path':'visita.txt'})[2]
+            self.assertEqual(self.request('DELETE','/api/quick-share/'+fresh['token'])[0],200)
+            self.assertEqual(self.request('GET',urlsplit(fresh['urls'][0]).path,auth=False)[0],404)
+        finally:
+            self.app.ips = previous_ips
+            file.unlink(missing_ok=True)
+
+    def test_android_update_metadata_matches_served_apk(self):
+        folder = Path(self.temp.name)
+        apk = folder / 'DropAgil-Android.apk'
+        metadata = folder / 'DropAgil-Android.version.json'
+        apk.write_bytes(b'example apk')
+        metadata.write_text(json.dumps({'versionCode':6,'versionName':'4.2',
+            'size':apk.stat().st_size,'sha256':hashlib.sha256(apk.read_bytes()).hexdigest()}),encoding='utf-8')
+        with patch('server.BASE', folder):
+            self.assertEqual(self.request('GET','/api/android-update',auth=False)[0],401)
+            code, _, info = self.request('GET','/api/android-update')
+            self.assertEqual(code,200)
+            self.assertEqual((info['versionCode'],info['url']),(6,'/api/android-apk'))
+            self.assertEqual(self.request('GET','/api/android-apk')[2],b'example apk')
+            apk.write_bytes(b'changed')
+            self.assertEqual(self.request('GET','/api/android-update')[0],503)
 
     def test_delete_file_folder_and_resume_after_deletion(self):
         upload = self.create('delete-me/nested/file.bin', 4)

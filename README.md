@@ -1,120 +1,109 @@
 # DropAgíl
 
-Arquivos e pastas entre computador e celular, pela rede local. Interface em português, sem conta e sem serviços externos. O computador funciona como central: envios para **Rede** ficam em `Recebidos`. Envios para um **dispositivo** aguardam o aceite do destinatário em uma área separada, sem aparecer na lista pública.
+O DropAgíl transfere arquivos e pastas entre computadores, celulares e navegadores na mesma rede local. O computador Windows funciona como central: guarda os arquivos enviados para a rede e encaminha entregas privadas. Não exige conta nem nuvem. A central precisa estar ligada durante envios, downloads e atualizações Android.
 
-## Versão 4 — aplicativo desktop
+## Onde usar
 
-- **DropAgil.exe**: aplicativo Windows independente, sem precisar instalar Python. Telas nativas de transferências, arquivos, dispositivos e conexão com QR Code. Para usar, extraia o pacote Windows em uma pasta gravável e abra o executável; mantenha essa pasta no mesmo lugar após configurar o início automático.
-- **Arquivos da rede** no desktop: navegação, busca, download em blocos com progresso, cancelamento e exclusão com confirmação. Pastas são baixadas em ZIP.
-- **Dois comandos no botão direito**, em arquivos e pastas: **DropAgíl — Enviar para a rede** inicia diretamente; **DropAgíl — Enviar para dispositivo…** abre somente a escolha dos aparelhos. No Windows 11, aparecem também em Mostrar mais opções. Atualize a integração em Conexão e ajustes ou execute Instalar-Windows.bat.
-- **Renomear dispositivos**: no desktop, aba Dispositivos; no Android, aba Conexão; na página, botão Renomear dispositivo. O nome fica salvo na central e é mostrado para toda a rede. Para renomear este navegador, deixe Rede selecionado e ative o recebimento.
-- **Limpeza da fila após 30 segundos** no Windows, Android e navegador. Somente linhas concluídas são retiradas; arquivos enviados, envios pausados e falhas são preservados.
-- **Recebimento Android ativado por padrão** para celulares pareados, depois de conceder notificações. Abre automaticamente ao iniciar o app, após atualização do APK e após reiniciar o Android quando permitido pelo sistema. Desativar manualmente é respeitado. Após fechamento forçado, abra o aplicativo novamente.
-- **Aceitar / Recusar no aviso compacto, expandido e flutuante**. Um toque na notificação abre uma confirmação com botões grandes. Android, configurações de notificação, tela bloqueada, Não Perturbe e regras do fabricante ainda controlam a exibição; o app não força tela cheia nem permissões de sobreposição.
+| Interface | Funções |
+| --- | --- |
+| Aplicativo Windows (DropAgil.exe) | Bandeja, envio pelo Explorador, recebimento, arquivos da rede, dispositivos e conexão. Não precisa de Python para uso diário. |
+| Aplicativo Android (DropAgil-Android.apk) | Envio pelo app ou pelo menu Compartilhar, recebimento por notificação, navegação e downloads. Requer Android 10 ou superior. |
+| Página local | Envio, recebimento, downloads e gerenciamento pelo navegador, sem instalar aplicativo no aparelho visitante. |
 
-### Gerar os aplicativos
+O pacote DropAgil-Windows.zip contém o EXE, o APK, os metadados de atualização e os atalhos de instalação. **Mantenha DropAgil-Android.apk e DropAgil-Android.version.json ao lado do EXE** para oferecer o app e suas atualizações aos celulares.
 
-```powershell
-python -m pip install -r requirements-build.txt
-python build_windows.py
-python android/tools/prepare_sdk.py
-python android/tools/build.py
-```
+## Instalar no Windows
 
-O executável é gerado na raiz do projeto. Coloque o APK na mesma pasta para disponibilizá-lo pelo computador. Dados, chaves de assinatura, arquivos recebidos, caches e binários de build não entram no Git. Conserve a chave Android local para atualizar a instalação existente.
+1. Extraia a pasta DropAgil do ZIP para um local gravável e definitivo, por exemplo C:\DropAgil. Evite movê-la depois de parear aparelhos: nela ficam Recebidos e os dados de pareamento.
+2. Abra DropAgil.exe ou Iniciar-DropAgil.bat. Na primeira abertura normal, o programa registra automaticamente o início com o seu usuário do Windows e os dois comandos do botão direito. Instalar-Windows.bat também registra a integração e inicia o programa.
+3. Procure o ícone perto do relógio e abra Transferências. Fechar ou esconder a janela mantém o aplicativo na bandeja.
+4. Se o Firewall do Windows perguntar, permita acesso em **redes privadas**. O PC pode usar cabo e o celular Wi-Fi, desde que estejam na mesma rede e o roteador permita comunicação entre eles.
+5. Na aba Conexão, veja endereço, QR Code e código de acesso da central. No próprio PC, a página fica em http://localhost:8787. Em outros aparelhos, use o endereço de rede mostrado pelo DropAgíl; localhost no celular aponta para o próprio celular.
 
-## Novidades da versão 3
+O DropAgíl inicia **após o login do Windows**, oculto na bandeja. Ele não roda antes da tela de login. Para desativar o início automático e remover os atalhos do Explorador, execute Remover-Integracao-Windows.bat. Essa escolha fica salva: abrir o app depois não reativa a integração. Para ativá-la novamente, execute Instalar-Windows.bat ou use Conexão e ajustes → Ativar / atualizar integração.
 
-- Identidade visual compartilhada no Android e na central Windows, com botão **Abrir página** em ambos.
-- Android com abas Transferir, Arquivos e Conexão. Ao compartilhar pela galeria, uma pequena janela permite escolher o destino; o envio segue pela notificação, sem abrir a tela principal quando já estiver pareado e com notificações permitidas.
-- **Enviar para**: escolha Rede ou um dispositivo disponível. O servidor no computador intermedeia a transferência e precisa permanecer ligado.
-- No Android de destino, ative **Receber arquivos neste celular**. Toque **Aceitar** ou **Recusar** na notificação. Os downloads vão para `Downloads/DropAgil`, em subpastas por arquivo para evitar sobrescritas. Após fechar à força, abra o app novamente; o recebimento automático respeita as limitações do Android.
-- No Windows, a bandeja fica disponível para receber e pede confirmação antes de salvar em Downloads/DropAgil. Os dois comandos do menu de contexto separam o envio à rede do envio a um dispositivo.
-- No navegador, use **Receber neste dispositivo** e mantenha a página aberta. Aceite pelo cartão que aparecer. Depois do download, use **Limpar entrega**; o navegador não informa com segurança ao site quando o download terminou.
-- A cópia temporária de uma entrega direta é removida ao recusar ou após confirmação de download dos apps nativos. Entregas sem resposta permanecem no computador aguardando o destinatário.
-- **Apagar** arquivos/pastas pela página ou pelo Android, com confirmação de exclusão permanente. Apaga somente a cópia da rede. Pastas com uploads pendentes são protegidas; conclua ou cancele os uploads primeiro.
+## Instalar no Android
 
-## Recursos de transferência
+1. Obtenha DropAgil-Android.apk no pacote Windows ou na página da central, em Conectar dispositivo → Baixar aplicativo Android.
+2. Abra o APK no celular e confirme a instalação. Se o Android pedir permissão para instalar arquivos dessa origem, autorize nas configurações exibidas.
+3. Abra o DropAgíl, informe o endereço completo do PC e o código mostrado na aba Conexão, depois toque em Conectar computador. O pareamento fica salvo.
+4. Permita as notificações. Após o pareamento, o recebimento vem **ativado por padrão** e uma notificação indica que o celular está disponível. O botão de recebimento na aba Transferir permite desligá-lo e religá-lo.
 
-- Pastas enviadas sem ZIP aparecem em **uma única linha**, com porcentagem calculada pelo total de bytes, contador de arquivos concluídos e controles da pasta inteira.
-- **Tempo decorrido**, tempo total ao concluir e estimativa restante. O tempo decorrido conta o período desde o início do envio, incluindo pausas; a estimativa depende da velocidade recente.
-- **Cancelar tudo** para parar rapidamente a fila do navegador, a fila do Windows ou a fila do app Android. Cada controle atua na fila daquele cliente e preserva os arquivos já concluídos.
-- **Windows:** bandeja perto do relógio, janela de progresso com botão Esconder e envio de arquivos/pastas pelo botão direito.
-- **Android nativo:** instalação do APK, envio pela Galeria > Compartilhar > DropAgíl, seleção de múltiplos arquivos, pastas e downloads no próprio app.
+Depois de reiniciar o celular ou atualizar o APK, o Android tenta iniciar o **serviço de recebimento** automaticamente, sem abrir a tela do app. A disponibilidade depende das permissões de notificação e das regras de bateria e execução do aparelho. Se você usar Forçar parada, abra o app novamente. Se desativar o recebimento, essa escolha será respeitada. O computador central precisa estar ligado para o celular aparecer na rede.
 
-## Windows: instalar uma vez
+## Funções
 
-Execute **Instalar-Windows.bat**. A instalação registra o DropAgíl para iniciar **ao entrar no seu usuário do Windows**, sem precisar abrir o site. Não é um serviço que roda antes da tela de login. O registro é por usuário e não pede administrador.
+### Enviar para a rede
 
-No Explorador, selecione um arquivo ou pasta e use **Enviar via DropAgíl** no botão direito. No Windows 11, pode estar em **Mostrar mais opções**. A janela mostra nome, progresso e tempo; **Esconder** mantém o envio em segundo plano. Na bandeja, use Transferências, Enviar arquivos, Enviar pasta, Arquivos da rede ou Abrir pasta Recebidos.
+Escolha **Rede** como destino. Os arquivos chegam a Recebidos no PC e aparecem em Arquivos da rede para os aparelhos conectados. O envio copia os arquivos e preserva os originais. Pastas mantêm a estrutura e aparecem como uma linha na fila. Nomes repetidos recebem um sufixo, sem substituir o arquivo existente.
 
-Os originais são preservados. O envio do Windows faz uma cópia para `Recebidos`; portanto precisa de espaço livre. Arquivos que já estão em `Recebidos` já estão compartilhados e não precisam de nova cópia.
+- **Windows:** use Enviar arquivos ou Enviar pasta na aba Transferências. No Explorador, clique com o botão direito e escolha DropAgíl — Enviar para a rede. O atalho não abre a janela principal; uma notificação informa conclusão ou falha.
+- **Android:** selecione arquivos ou pasta na aba Transferir. Pela Galeria, Arquivos ou outro app, use Compartilhar → DropAgíl. Se o aparelho já estiver pareado, escolha o destino na janela compacta e acompanhe o envio pela notificação.
+- **Navegador:** arraste arquivos para a página ou use Escolher arquivos e Enviar pasta. A seleção de pastas depende do navegador.
 
-**Iniciar-DropAgil.bat** abre a bandeja manualmente se necessário. **Remover-Integracao-Windows.bat** remove o início automático e o menu de contexto, mantendo os arquivos. A opção Sair da bandeja pausa a fila nativa; a central de arquivos pode continuar em execução.
+### Enviar para um aparelho específico
 
-## Android: compartilhar direto da Galeria
+Escolha um dispositivo disponível em **Enviar para**. A entrega fica em uma área privada da central e **não aparece em Arquivos da rede**. O destinatário recebe um pedido e precisa Aceitar ou Recusar. No Windows, a janela compacta Receber pelo DropAgíl? fica à frente dos outros programas. No Android, as ações aparecem na notificação e na tela aberta por ela. No navegador, ative Receber neste dispositivo e mantenha a página aberta.
 
-Instale **DropAgil-Android.apk** (Android 10 ou superior). Ele também está disponível na página **Conectar dispositivo > Baixar aplicativo Android**. Na primeira abertura, informe endereço e código da central e toque em Conectar computador. Depois selecione fotos ou vídeos na Galeria, toque Compartilhar > **DropAgíl** e escolha **Rede** ou o aparelho de destino.
+No Explorador do Windows, DropAgíl — Enviar para dispositivo… abre só uma pequena janela de escolha. No Windows 11, os comandos podem estar em Mostrar mais opções. Arquivos aceitos no Windows e Android vão para Downloads/DropAgil; no Android, cada recebimento usa uma subpasta para evitar sobrescritas. No navegador, o download é entregue ao próprio navegador; depois use Limpar entrega.
 
-O pareamento persiste após reiniciar a central. Se o endereço IP do computador mudar, atualize a configuração do aplicativo. Dentro do app, abra Arquivos da rede para baixar diretamente para Downloads. Consulte `android/README.md` para detalhes, permissões e limitações do Android.
+### Arquivos da rede e QR rápido
 
-## Começar no Windows
+Em Arquivos da rede, navegue pelas pastas, busque pelo nome, baixe arquivos e exclua cópias compartilhadas. A exclusão pede confirmação e é permanente para a cópia da rede; não apaga o arquivo original usado no envio. Pastas são baixadas como ZIP. O Windows mostra progresso e permite cancelar o download. No Android, o gerenciador de downloads acompanha o arquivo, que vai para Downloads.
 
-1. Tenha Python **3.11 ou superior** instalado, com a opção **Add Python to PATH**.
-2. Opcional, para QR Code: abra o terminal nesta pasta e execute `python -m pip install -r requirements.txt`. Essa instalação requer internet; o uso diário não.
-3. Execute **Instalar-Windows.bat** para a experiência completa de bandeja, ou `python server.py` no terminal para usar só a central.
-4. No computador, abra **http://localhost:8787**. A seção **Conectar dispositivo** mostra endereço, QR Code e código de acesso.
-5. Conecte o celular ao Wi-Fi do mesmo roteador, abra o endereço exibido (por exemplo `http://192.168.1.10:8787`) e digite o código. **localhost no celular não é o computador.**
-6. Se o Windows perguntar, permita o Python em **redes privadas**. Não é necessário encaminhar portas no roteador.
+Para entregar **um arquivo** a um visitante sem instalar ou configurar o DropAgíl, escolha QR rápido no aplicativo Windows ou na página. Qualquer pessoa com o QR Code ou link, na mesma rede, pode baixar somente aquele arquivo. O link expira em **uma hora** e pode ser encerrado antes. O PC precisa permanecer ligado. Para uma pasta, gere um ZIP; o QR rápido não é oferecido diretamente para pastas.
 
-PC por cabo e celular por Wi-Fi funcionam juntos: ambos precisam estar na mesma rede com comunicação entre os clientes permitida. Redes de visitantes e isolamento de clientes podem impedir o acesso. Se existirem vários endereços, escolha o IP da placa ligada ao roteador, e não um adaptador de VPN ou máquina virtual. Se o IP mudar, reinicie o servidor e use o endereço atualizado.
+### Filas, dispositivos e conexão
 
-## Enviar e receber
+- As filas mostram progresso, bytes e tempo. Pausar, Retomar e Cancelar tudo atuam somente na fila daquele cliente. Cancelar preserva arquivos já concluídos.
+- Linhas concluídas somem da fila após 30 segundos, sem apagar os arquivos. Falhas e itens pausados continuam visíveis.
+- A lista Dispositivos mostra aparelhos disponíveis. Renomeie-os no Windows, no Android ou na página; o nome é salvo na central e aparece para todos.
+- Conexão mostra endereço, QR Code e código de acesso. Os aplicativos Windows e Android também têm Abrir página para abrir a interface local no navegador.
+- Você pode colocar arquivos diretamente em Recebidos no PC e atualizar a lista. Assim evita uma segunda cópia de arquivos grandes.
 
-- **Celular → PC:** selecione arquivos no celular. Eles chegam à pasta `Recebidos`, ao lado de `server.py`.
-- **PC → celular:** selecione arquivos na página do PC; depois baixe em **Arquivos da rede** no celular.
-- **Sem duplicar arquivos grandes no PC:** mova os arquivos/pastas pelo Explorador para `Recebidos` e atualize a lista. Também é possível iniciar o sistema com `--data-dir` em outro disco. O programa compartilha apenas a subpasta `Recebidos` desse diretório.
-- **Pastas:** a estrutura dos arquivos selecionados é preservada; para baixar a pasta inteira, use **ZIP**. Ele é gerado durante o download, sem criar uma segunda cópia temporária. Pastas vazias não são enviadas pelo seletor do navegador. A seleção de pastas no celular depende do navegador; enviar um ZIP é uma alternativa.
-- Arquivos com nomes repetidos recebem um sufixo, sem substituir os existentes. Nomes incompatíveis com Windows são recusados com uma mensagem.
-- Para excluir arquivos ou pastas concluídos, use **Apagar** na página ou no Android. É uma exclusão permanente da cópia da rede, com confirmação. Para organizar pastas, também pode usar o Explorador no computador.
+## Atualizar
 
-## Arquivos grandes e retomada
+### Windows
 
-- Envios em blocos de **8 MiB**, até **dois arquivos simultâneos**. O servidor copia em blocos de até 1 MiB para disco, sem carregar o arquivo inteiro na RAM. O navegador mantém somente o bloco atual por envio.
-- Pausa, retomada, progresso, velocidade estimada e tentativas automáticas após falha.
-- Se a página fechar ou o servidor reiniciar, selecione os **mesmos arquivos ou a mesma pasta** no mesmo navegador e endereço. O identificador salvo no navegador retoma o ponto confirmado no disco. Mantenha o arquivo original intacto: a associação usa caminho, tamanho e data de modificação, não um hash completo do arquivo.
-- Se apagar os dados do navegador, mudar de endereço ou usar modo privado, os identificadores de retomada podem se perder. Partes pendentes ficam em `.dropagil` até serem canceladas. Não apague essa pasta com o servidor rodando.
-- Downloads individuais suportam HTTP Range para retomada por navegadores/gerenciadores compatíveis. A interface delega o download ao navegador, sem montar um Blob do arquivo inteiro. Downloads ZIP em fluxo precisam recomeçar se interrompidos.
-- Sem limite comercial por arquivo. O limite real depende do espaço livre, sistema de arquivos, navegador e dispositivo. Use NTFS/exFAT para arquivos maiores que 4 GB; FAT32 não suporta esses arquivos.
-- A checagem inicial de espaço não reserva disco. Envios concorrentes ou outros programas podem consumir o espaço; nesse caso o envio para com aviso e pode ser retomado após liberar espaço.
-- Deixe o navegador do celular aberto e a tela ligada durante envios longos: Android/iOS podem suspender abas em segundo plano. O PC precisa permanecer ligado, sem suspensão.
-- A velocidade exibida é uma estimativa por bloco; a velocidade real depende de Wi-Fi, cabo, roteador e disco. Não há garantia de taxa fixa.
+1. Obtenha o novo DropAgil-Windows.zip. Faça backup da pasta atual, principalmente Recebidos e .dropagil. Se você compila APKs, preserve também .dropagil/android-debug.keystore.
+2. Saia da bandeja. A central pode continuar rodando; se ainda houver processos DropAgil.exe no Gerenciador de Tarefas, encerre-os antes de substituir o EXE.
+3. Copie **o conteúdo da pasta DropAgil dentro do ZIP** sobre a pasta de instalação existente, substituindo os arquivos do pacote. Preserve Recebidos e .dropagil para manter arquivos e pareamentos.
+4. Abra o novo EXE ou reinicie o Windows. Se necessário, atualize os atalhos na aba Conexão ou execute Instalar-Windows.bat.
 
-## Acesso
+### Android pela rede
 
-O código de seis dígitos muda a cada inicialização. Sessões expiram após 24 horas ou ao reiniciar o servidor. Há limite de tentativas de código. Acesso por localhost entra automaticamente e mostra o código; outros dispositivos precisam informá-lo. Quem tem o código pode acessar os arquivos compartilhados, portanto use apenas sua rede de confiança.
+1. Na pasta da central Windows em execução, coloque juntos o novo DropAgil-Android.apk e DropAgil-Android.version.json. O ZIP Windows atualizado já contém ambos.
+2. Deixe PC e celular na mesma rede, com o app Android pareado com a central.
+3. Abra o DropAgíl no celular. Desde a versão **4.2**, ele consulta a central a cada abertura. Se houver um código de versão maior, baixa o APK, confere tamanho, SHA-256, pacote e assinatura e solicita a instalação ao Android.
+4. Na primeira atualização, permita Instalar apps desconhecidos para o DropAgíl se o Android pedir. Alguns aparelhos também pedem confirmação; outros podem concluir sem intervenção. Reabra o app e confira a versão na aba Conexão.
 
-O tráfego usa **HTTP local, sem criptografia de transporte**. O código controla o acesso, mas não substitui HTTPS contra alguém monitorando a rede. Não publique este servidor na internet e não faça encaminhamento de portas. Arquivos recebidos só são servidos como download; a aplicação não executa seu conteúdo. Não há telemetria, fontes remotas ou CDN.
+Se não aparecer atualização, confira o endereço salvo no celular, a conexão com a central e se os dois arquivos estão ao lado do EXE usado. Versões anteriores à 4.2 precisam receber o APK manualmente uma vez. **Conserve a mesma chave de assinatura**: outro certificado não atualiza um app já instalado.
 
-## Opções
+## Rede, armazenamento e limites
 
-```powershell
-python server.py --port 8787
-python server.py --port 8787 --data-dir "D:\DropAgil"
-```
+- A central usa a porta **8787**. Redes de visitantes, isolamento Wi-Fi, VPN e firewall podem bloquear o acesso. Não é preciso encaminhar portas no roteador.
+- O código de seis dígitos muda a cada inicialização da central. As sessões da página expiram após 24 horas ou ao reiniciar. Pareamentos dos aplicativos persistem e podem ser revogados.
+- O tráfego é **HTTP local, sem criptografia de transporte**. Use uma rede de confiança e não exponha a porta à internet. Quem tiver um link QR rápido válido poderá baixar o arquivo indicado.
+- Envios usam blocos de até **8 MiB** e admitem retomada. No navegador, após fechar a página, selecione os mesmos arquivos no mesmo navegador e endereço, sem mudar os originais. Apagar dados do navegador pode perder a associação. Downloads individuais aceitam HTTP Range; ZIPs em fluxo recomeçam se interrompidos.
+- O tamanho máximo prático depende de espaço em disco, sistema de arquivos, navegador e aparelho. FAT32 não aceita arquivos acima de 4 GB; use NTFS ou exFAT. Não apague .dropagil durante uma transferência.
+- Android e navegadores podem limitar trabalho em segundo plano. Mantenha a página aberta em envios longos. O PC deve permanecer ligado e sem suspensão.
 
-No modo terminal, Ctrl+C encerra a central. No modo bandeja, o sistema inicia ao entrar no Windows. Para instalar dependências depois: `python -m pip install -r requirements.txt`.
+## Compilar pelo código-fonte
 
-## Verificação automatizada
+Para Windows, use Python 3.11 ou superior. Para Android, use também JDK 21. A preparação Android baixa uma vez as ferramentas oficiais do SDK; a instalação das dependências de build requer internet.
 
-```powershell
-python -m unittest discover -s tests -v
-node --check public/app.js
-node --test tests/test_groups.cjs
-```
+    python -m pip install -r requirements-build.txt
+    python build_windows.py
+    python android/tools/prepare_sdk.py
+    python android/tools/build.py
+    python package_release.py
 
-Os testes usam diretórios temporários e porta aleatória, sem alterar arquivos reais. Cobrem autenticação, proteção de caminhos, streaming, upload interrompido, retomada após recriar o estado do servidor, arquivos vazios, nomes repetidos, ZIP e downloads parciais. O teste de posições acima de 4 GB usa um arquivo simulado para não ocupar o disco; não substitui uma transferência real de vários gigabytes entre seus dispositivos.
+O build gera DropAgil-Android.apk e DropAgil-Android.version.json na raiz. Mudanças em fontes ou recursos Android elevam o código da versão; recompilar os mesmos arquivos mantém o código. A assinatura local fica em .dropagil/android-debug.keystore. Faça backup dessa chave para continuar atualizando celulares já instalados. Ela não entra no pacote de código.
 
-A versão 2 acrescenta testes do agrupamento e progresso por bytes, upload de pasta pelo cliente Windows e pareamento Android persistente/revogável. O APK é compilado, sua assinatura é verificada e os filtros de compartilhamento são conferidos no manifesto compilado. O fluxo da Galeria ainda precisa ser conferido no celular físico do usuário.
+Para rodar somente a central pelo código, instale requirements.txt e execute python server.py. Nesse modo, --port e --data-dir permitem mudar porta e diretório dos dados. Para testar:
 
-A versão 3 também valida entrega privada entre três identidades, aceite obrigatório, recusa, isolamento do destinatário, download parcial, limpeza das cópias temporárias e recebimento retomável no Windows. O fluxo de notificações ainda precisa ser testado em Android físico.
+    python -m unittest discover -s tests -v
+    node --check public/app.js
+    node --test tests/test_groups.cjs
+
+Veja [android/README.md](android/README.md) para detalhes de permissões, notificações e compilação Android.

@@ -18,19 +18,27 @@ public class MainActivity extends Activity {
     final Handler timer=new Handler(Looper.getMainLooper());
     LinearLayout content,queueView,fileView; EditText address,pin; TextView connection;
     String folder=""; ArrayList<String> pendingUris=new ArrayList<>(); boolean pendingFolder=false; ClipData pendingClip;
+    long attemptedUpdateVersion=0; boolean askedInstallPermission=false;
     static final int GREEN=0xff244d40, MUTED=0xff687b64;
     android.content.SharedPreferences prefs(){return getSharedPreferences("dropagil",0);}
     int dp(int n){return (int)(n*getResources().getDisplayMetrics().density);}
     TextView text(String value,int size,int color){TextView view=new TextView(this);view.setText(value);view.setTextSize(size);view.setTextColor(color);view.setPadding(0,dp(6),0,dp(6));return view;}
-    Button button(String label,Runnable action){Button button=new Button(this);button.setText(label);button.setTextColor(GREEN);button.setAllCaps(false);button.setTextSize(13);button.setMinHeight(dp(48));button.setBackgroundTintList(android.content.res.ColorStateList.valueOf(0xffedf2e7));button.setOnClickListener(v->action.run());return button;}
+    ImageButton iconButton(String label,String icon,Runnable action){
+        ImageButton button=new ImageButton(this);button.setImageDrawable(new ActionIcon(icon,GREEN));
+        button.setScaleType(ImageView.ScaleType.FIT_CENTER);button.setPadding(dp(12),dp(12),dp(12),dp(12));
+        button.setBackground(rounded(0xffedf2e7,14));button.setContentDescription(label);button.setTooltipText(label);
+        button.setOnClickListener(v->action.run());return button;
+    }
+    LinearLayout.LayoutParams iconSpace(){LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(dp(48),dp(48));p.leftMargin=dp(6);return p;}
     void message(String value){runOnUiThread(()->Toast.makeText(this,value,Toast.LENGTH_LONG).show());}
+    String appVersion(){try{return getPackageManager().getPackageInfo(getPackageName(),0).versionName;}catch(Exception ignored){return "";}}
     @Override public void onCreate(Bundle state){super.onCreate(state);build();if(state==null)receive(getIntent());else{ArrayList<String> saved=state.getStringArrayList("pending");if(saved!=null)pendingUris=saved;pendingFolder=state.getBoolean("pendingFolder");}if(Build.VERSION.SDK_INT>=33&&checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED)requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS},9);timer.post(tick);}
     @Override protected void onSaveInstanceState(Bundle state){state.putStringArrayList("pending",pendingUris);state.putBoolean("pendingFolder",pendingFolder);super.onSaveInstanceState(state);}
     @Override protected void onNewIntent(Intent intent){super.onNewIntent(intent);setIntent(intent);receive(intent);}
     LinearLayout transferPage, filesPage, configPage;
-    Button[] tabs;
+    ImageButton[] tabs;
     Spinner destination; ArrayList<String> destinationIds=new ArrayList<>();
-    Button receiving;
+    ImageButton receiving;
     int currentTab = 0;
     android.graphics.drawable.GradientDrawable rounded(int color, int radius) {
         android.graphics.drawable.GradientDrawable shape = new android.graphics.drawable.GradientDrawable();
@@ -45,11 +53,10 @@ public class MainActivity extends Activity {
         TextView heading=text(label,25,GREEN);heading.setTypeface(null,android.graphics.Typeface.BOLD);parent.addView(heading);
         parent.addView(text(detail,14,MUTED));
     }
-    void primary(Button button) { button.setBackgroundTintList(android.content.res.ColorStateList.valueOf(GREEN));button.setTextColor(Color.WHITE); }
     void showTab(int tab) {
         currentTab=tab; transferPage.setVisibility(tab==0?View.VISIBLE:View.GONE);
         filesPage.setVisibility(tab==1?View.VISIBLE:View.GONE);configPage.setVisibility(tab==2?View.VISIBLE:View.GONE);
-        for(int i=0;i<tabs.length;i++) {tabs[i].setTextColor(i==tab?GREEN:MUTED);tabs[i].setBackgroundTintList(android.content.res.ColorStateList.valueOf(i==tab?0xffddf5b0:0xfff5f7f2));}
+        for(int i=0;i<tabs.length;i++) {tabs[i].setBackground(rounded(i==tab?0xffddf5b0:0xffedf2e7,14));tabs[i].setSelected(i==tab);}
         if(tab==1)loadFiles();
     }
     void openPage() {
@@ -61,10 +68,10 @@ public class MainActivity extends Activity {
     void build(){
         LinearLayout shell=column();shell.setBackgroundColor(0xfff5f7f2);setContentView(shell);
         shell.setOnApplyWindowInsetsListener((v,insets)->{if(Build.VERSION.SDK_INT>=30){android.graphics.Insets bars=insets.getInsets(WindowInsets.Type.systemBars()|WindowInsets.Type.ime());v.setPadding(bars.left,bars.top,bars.right,bars.bottom);}else v.setPadding(insets.getSystemWindowInsetLeft(),insets.getSystemWindowInsetTop(),insets.getSystemWindowInsetRight(),insets.getSystemWindowInsetBottom());return insets;});
-        LinearLayout brand=new LinearLayout(this);brand.setGravity(Gravity.CENTER_VERTICAL);brand.setPadding(dp(20),dp(10),dp(20),dp(8));
+        LinearLayout brand=new LinearLayout(this);brand.setGravity(Gravity.CENTER_VERTICAL);brand.setPadding(dp(20),dp(12),dp(20),dp(12));brand.setBackgroundColor(0xff173f35);
         ImageView logo=new ImageView(this);logo.setImageResource(br.com.dropagil.app.R.drawable.ic_dropagil);brand.addView(logo,new LinearLayout.LayoutParams(dp(40),dp(40)));
-        TextView wordmark=text("  DropAgíl",25,GREEN);wordmark.setTypeface(null,android.graphics.Typeface.BOLD);brand.addView(wordmark,new LinearLayout.LayoutParams(0,-2,1));
-        Button web=button("Abrir página",this::openPage);web.setTextSize(12);brand.addView(web);shell.addView(brand);
+        LinearLayout brandWords=column();brandWords.setPadding(dp(10),0,0,0);TextView wordmark=text("DropAgíl",23,Color.WHITE);wordmark.setTypeface(null,android.graphics.Typeface.BOLD);brandWords.addView(wordmark);TextView tagline=text("PERTINHO. RAPIDINHO.",10,0xffddf5b0);tagline.setLetterSpacing(.12f);brandWords.addView(tagline);brand.addView(brandWords,new LinearLayout.LayoutParams(0,-2,1));
+        ImageButton web=iconButton("Abrir página","web",this::openPage);web.setImageDrawable(new ActionIcon("web",0xffddf5b0));web.setBackground(rounded(0xff386253,14));brand.addView(web,new LinearLayout.LayoutParams(dp(48),dp(48)));shell.addView(brand);
         ScrollView scroll=new ScrollView(this);scroll.setFillViewport(true);shell.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
         content=column();content.setPadding(dp(20),dp(12),dp(20),dp(24));scroll.addView(content);
         transferPage=column();filesPage=column();configPage=column();content.addView(transferPage);content.addView(filesPage);content.addView(configPage);
@@ -74,40 +81,41 @@ public class MainActivity extends Activity {
         hero.addView(text("ENVIAR PARA",11,0xffddf5b0));
         destination=new Spinner(this);destination.setBackground(rounded(0xffedf2e7,12));hero.addView(destination,new LinearLayout.LayoutParams(-1,dp(48)));
         destination.setOnItemSelectedListener(new android.widget.AdapterView.OnItemSelectedListener(){public void onNothingSelected(android.widget.AdapterView<?> p){} public void onItemSelected(android.widget.AdapterView<?> p,View v,int pos,long id){if(pos<destinationIds.size())prefs().edit().putString("target",destinationIds.get(pos)).apply();}});
-        hero.addView(button("Atualizar dispositivos",this::loadDestinations));loadDestinations();
-        Button send=button("Enviar arquivos",this::pickFiles);send.setBackgroundTintList(android.content.res.ColorStateList.valueOf(0xffddf5b0));hero.addView(send);
-        Button folders=button("Enviar uma pasta",this::pickFolder);folders.setTextColor(Color.WHITE);folders.setBackgroundTintList(android.content.res.ColorStateList.valueOf(0xff386253));hero.addView(folders);
+        LinearLayout heroActions=new LinearLayout(this);heroActions.setGravity(Gravity.END);heroActions.setPadding(0,dp(12),0,0);
+        heroActions.addView(iconButton("Atualizar dispositivos","refresh",this::loadDestinations),iconSpace());loadDestinations();
+        ImageButton send=iconButton("Enviar arquivos","upload",this::pickFiles);send.setBackground(rounded(0xffddf5b0,14));heroActions.addView(send,iconSpace());
+        ImageButton folders=iconButton("Enviar uma pasta","folder",this::pickFolder);folders.setImageDrawable(new ActionIcon("folder",Color.WHITE));folders.setBackground(rounded(0xff386253,14));heroActions.addView(folders,iconSpace());hero.addView(heroActions);
         title(transferPage,"Transferências","Concluídos somem após 30 segundos. Os arquivos são mantidos.");
         LinearLayout controls=new LinearLayout(this);
-        controls.addView(button("Pausar",()->control("pause")),new LinearLayout.LayoutParams(0,-2,1));controls.addView(button("Retomar",()->control("resume")),new LinearLayout.LayoutParams(0,-2,1));
-        Button cancel=button("Cancelar tudo",()->control("cancel"));cancel.setTextColor(0xffa34536);controls.addView(cancel,new LinearLayout.LayoutParams(0,-2,1));transferPage.addView(controls);
+        controls.setGravity(Gravity.END);controls.addView(iconButton("Pausar envios","pause",()->control("pause")),iconSpace());controls.addView(iconButton("Retomar envios","play",()->control("resume")),iconSpace());
+        ImageButton cancel=iconButton("Cancelar tudo","cancel",()->control("cancel"));cancel.setImageDrawable(new ActionIcon("cancel",0xffa34536));controls.addView(cancel,iconSpace());transferPage.addView(controls);
         queueView=column();transferPage.addView(queueView);
         transferPage.addView(text("Dica: na galeria, toque em Compartilhar → DropAgíl. O envio aparece na notificação.",13,MUTED));
-        receiving=button(ReceiveService.running?"Desativar recebimento":"Receber arquivos neste celular",()->{
-            if(ReceiveService.running){prefs().edit().putBoolean("receivingEnabled",false).apply();stopService(new Intent(this,ReceiveService.class));receiving.setText("Receber arquivos neste celular");}
+        receiving=iconButton("Receber arquivos neste celular","bell",()->{
+            if(ReceiveService.running){prefs().edit().putBoolean("receivingEnabled",false).apply();stopService(new Intent(this,ReceiveService.class));updateReceiving();}
             else if(prefs().getString("token","").isEmpty()){showTab(2);message("Conecte ao computador primeiro.");}
             else if(Build.VERSION.SDK_INT>=33&&checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED){requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS},9);message("Permita notificações e ative o recebimento novamente.");}
-            else {prefs().edit().putBoolean("receivingEnabled",true).apply();startForegroundService(new Intent(this,ReceiveService.class));receiving.setText("Desativar recebimento");message("Disponível na rede. Confirme os arquivos pela notificação.");}
-        });transferPage.addView(receiving);
+            else {prefs().edit().putBoolean("receivingEnabled",true).apply();startForegroundService(new Intent(this,ReceiveService.class));updateReceiving();message("Disponível na rede. Confirme os arquivos pela notificação.");}
+        });LinearLayout receiveRow=new LinearLayout(this);receiveRow.setGravity(Gravity.CENTER_VERTICAL);receiveRow.addView(text("Recebimento neste celular",14,GREEN),new LinearLayout.LayoutParams(0,-2,1));receiveRow.addView(receiving,iconSpace());transferPage.addView(receiveRow);updateReceiving();
         title(filesPage,"Arquivos da rede","Baixe ou libere espaço no computador.");
-        LinearLayout fileButtons=new LinearLayout(this);fileButtons.addView(button("Atualizar",this::loadFiles),new LinearLayout.LayoutParams(0,-2,1));fileButtons.addView(button("Voltar à raiz",()->{folder="";loadFiles();}),new LinearLayout.LayoutParams(0,-2,1));filesPage.addView(fileButtons);
+        LinearLayout fileButtons=new LinearLayout(this);fileButtons.setGravity(Gravity.END);fileButtons.addView(iconButton("Atualizar arquivos","refresh",this::loadFiles),iconSpace());fileButtons.addView(iconButton("Voltar à raiz","home",()->{folder="";loadFiles();}),iconSpace());filesPage.addView(fileButtons);
         fileView=column();filesPage.addView(fileView);
         title(configPage,"Sua conexão","Configure uma vez. Compartilhe quando quiser.");
         LinearLayout config=card(configPage);
         connection=text(prefs().getString("token","").isEmpty()?"Vamos conectar seu computador":"Computador salvo • "+prefs().getString("host",""),15,GREEN);config.addView(connection);
         config.addView(text("Endereço do computador",13,MUTED));address=new EditText(this);address.setTextSize(16);address.setSingleLine(true);address.setInputType(android.text.InputType.TYPE_CLASS_TEXT|android.text.InputType.TYPE_TEXT_VARIATION_URI);address.setHint("http://192.168.1.100:8787");address.setText(prefs().getString("host",""));config.addView(address);
         config.addView(text("Código de acesso",13,MUTED));pin=new EditText(this);pin.setTextSize(16);pin.setSingleLine(true);pin.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);pin.setHint("Os 6 números da página do computador");config.addView(pin);
-        Button connect=button("Conectar computador",this::pair);primary(connect);config.addView(connect);
+        LinearLayout connectRow=new LinearLayout(this);connectRow.setGravity(Gravity.CENTER_VERTICAL);connectRow.addView(text("Conectar computador",14,GREEN),new LinearLayout.LayoutParams(0,-2,1));ImageButton connect=iconButton("Conectar computador","network",this::pair);connect.setImageDrawable(new ActionIcon("network",Color.WHITE));connect.setBackground(rounded(GREEN,14));connectRow.addView(connect,iconSpace());config.addView(connectRow);
         configPage.addView(text("O celular pode usar Wi-Fi e o computador, cabo. Ambos precisam estar no mesmo roteador. Encontre o endereço e o código em Conectar celular, no computador.",15,MUTED));
-        configPage.addView(button("Renomear dispositivos da rede",this::renameDevices));
-        configPage.addView(button("Permissões de notificação",()->startActivity(new Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(android.provider.Settings.EXTRA_APP_PACKAGE,getPackageName()))));
-        configPage.addView(text("DropAgíl 4.0 • Feito para ficar por perto.\nOs arquivos trafegam pela rede local via HTTP.",12,MUTED));
+        LinearLayout configActions=new LinearLayout(this);configActions.setGravity(Gravity.END);configActions.addView(iconButton("Renomear dispositivos da rede","edit",this::renameDevices),iconSpace());
+        configActions.addView(iconButton("Permissões de notificação","settings",()->startActivity(new Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(android.provider.Settings.EXTRA_APP_PACKAGE,getPackageName()))),iconSpace());configPage.addView(configActions);
+        configPage.addView(text("DropAgíl "+appVersion()+" • Feito para ficar por perto.\nOs arquivos trafegam pela rede local via HTTP.",12,MUTED));
         LinearLayout navigation=new LinearLayout(this);navigation.setPadding(dp(12),dp(6),dp(12),dp(8));
-        tabs=new Button[]{button("Transferir",()->showTab(0)),button("Arquivos",()->showTab(1)),button("Conexão",()->showTab(2))};
-        for(Button tab:tabs)navigation.addView(tab,new LinearLayout.LayoutParams(0,-2,1));shell.addView(navigation);
+        tabs=new ImageButton[]{iconButton("Transferir","upload",()->showTab(0)),iconButton("Arquivos","folder",()->showTab(1)),iconButton("Conexão","network",()->showTab(2))};
+        for(ImageButton tab:tabs){LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(0,dp(52),1);p.setMargins(dp(4),0,dp(4),0);navigation.addView(tab,p);}shell.addView(navigation);
         showTab(prefs().getString("token","").isEmpty()?2:0);
     }
-    @Override protected void onResume(){super.onResume();ReceiverStartup.start(this);}
+    @Override protected void onResume(){super.onResume();ReceiverStartup.start(this);AutoUpdater.check(this);}
     @Override public void onRequestPermissionsResult(int request,String[] permissions,int[] grants){super.onRequestPermissionsResult(request,permissions,grants);ReceiverStartup.start(this);}
     void renameDevices() {
         if(prefs().getString("token","").isEmpty()){showTab(2);return;}
@@ -137,7 +145,7 @@ public class MainActivity extends Activity {
         if(!saved.isEmpty()&&selected==0){destinationIds.add(saved);names.add("Destino salvo • indisponível agora");selected=names.size()-1;}
         ArrayAdapter<String> adapter=new ArrayAdapter<>(this,android.R.layout.simple_spinner_item,names);adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);destination.setAdapter(adapter);destination.setSelection(selected);
     }
-    void pair(){String value=address.getText().toString(),code=pin.getText().toString();connection.setText("Conectando…");io.execute(()->{try{String host=Api.validate(value),token=Api.pair(host,code,Build.MODEL);prefs().edit().putString("host",host).putString("token",token).apply();runOnUiThread(()->{connection.setText("Conectado a "+host);pin.setText("");ReceiverStartup.start(this);showTab(0);loadDestinations();loadFiles();if(!pendingUris.isEmpty())sendPending();});}catch(Exception e){runOnUiThread(()->connection.setText(e.getMessage()));}});}
+    void pair(){String value=address.getText().toString(),code=pin.getText().toString();connection.setText("Conectando…");io.execute(()->{try{String host=Api.validate(value),token=Api.pair(host,code,Build.MODEL);prefs().edit().putString("host",host).putString("token",token).apply();runOnUiThread(()->{connection.setText("Conectado a "+host);pin.setText("");ReceiverStartup.start(this);showTab(0);loadDestinations();loadFiles();AutoUpdater.check(this);if(!pendingUris.isEmpty())sendPending();});}catch(Exception e){runOnUiThread(()->connection.setText(e.getMessage()));}});}
     void receive(Intent intent){
         if(intent==null)return;
         String action=intent.getAction();
@@ -152,7 +160,7 @@ public class MainActivity extends Activity {
     }
     void pickFiles(){Intent intent=new Intent(Intent.ACTION_OPEN_DOCUMENT).setType("*/*").addCategory(Intent.CATEGORY_OPENABLE).putExtra(Intent.EXTRA_ALLOW_MULTIPLE,true);startActivityForResult(intent,1);}
     void pickFolder(){startActivityForResult(new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE),2);}
-    @Override protected void onActivityResult(int request,int result,Intent data){super.onActivityResult(request,result,data);if(result!=RESULT_OK||data==null)return;pendingUris.clear();ArrayList<Uri> uris=new ArrayList<>();if(data.getClipData()!=null)for(int i=0;i<data.getClipData().getItemCount();i++)uris.add(data.getClipData().getItemAt(i).getUri());else if(data.getData()!=null)uris.add(data.getData());for(Uri uri:uris){try{getContentResolver().takePersistableUriPermission(uri,data.getFlags()&Intent.FLAG_GRANT_READ_URI_PERMISSION);}catch(Exception ignored){}pendingUris.add(uri.toString());}pendingFolder=request==2;pendingClip=data.getClipData();sendPending();}
+    @Override protected void onActivityResult(int request,int result,Intent data){super.onActivityResult(request,result,data);if(request==11){if(getPackageManager().canRequestPackageInstalls())AutoUpdater.check(this);return;}if(result!=RESULT_OK||data==null)return;pendingUris.clear();ArrayList<Uri> uris=new ArrayList<>();if(data.getClipData()!=null)for(int i=0;i<data.getClipData().getItemCount();i++)uris.add(data.getClipData().getItemAt(i).getUri());else if(data.getData()!=null)uris.add(data.getData());for(Uri uri:uris){try{getContentResolver().takePersistableUriPermission(uri,data.getFlags()&Intent.FLAG_GRANT_READ_URI_PERMISSION);}catch(Exception ignored){}pendingUris.add(uri.toString());}pendingFolder=request==2;pendingClip=data.getClipData();sendPending();}
     void sendPending(){
         if(pendingUris.isEmpty())return;
         if(prefs().getString("token","").isEmpty()){showTab(2);message("Informe o endereço e código uma vez para conectar. Os arquivos selecionados estão aguardando.");return;}
@@ -164,7 +172,8 @@ public class MainActivity extends Activity {
     String size(long bytes){if(bytes>=1024L*1024*1024)return String.format(Locale.getDefault(),"%.1f GB",bytes/(1024.0*1024*1024));if(bytes>=1024*1024)return String.format(Locale.getDefault(),"%.1f MB",bytes/(1024.0*1024));return bytes/1024+" KB";}
     String duration(long ms){long s=Math.max(0,ms/1000);return String.format(Locale.getDefault(),"%02d:%02d:%02d",s/3600,(s/60)%60,s%60);}
     void renderQueue(){JSONArray jobs=TransferService.snapshot(this);queueView.removeAllViews();boolean any=false;for(int i=0;i<jobs.length();i++){JSONObject job=jobs.optJSONObject(i);if(job==null||job.optString("state").equals("cancelled"))continue;any=true;String state=job.optString("state");long total=job.optLong("total"),sent=job.optLong("sent");int percent=state.equals("done")?100:total==0?0:(int)Math.min(99,sent*100.0/total);LinearLayout card=new LinearLayout(this);card.setOrientation(LinearLayout.VERTICAL);card.setPadding(dp(12),dp(8),dp(12),dp(12));card.setBackground(rounded(Color.WHITE,18));LinearLayout.LayoutParams layout=new LinearLayout.LayoutParams(-1,-2);layout.bottomMargin=dp(10);queueView.addView(card,layout);card.addView(text(job.optString("name"),17,GREEN));ProgressBar bar=new ProgressBar(this,null,android.R.attr.progressBarStyleHorizontal);bar.setMax(100);bar.setProgress(percent);bar.setProgressTintList(android.content.res.ColorStateList.valueOf(GREEN));bar.setProgressBackgroundTintList(android.content.res.ColorStateList.valueOf(0xffe5ecdd));card.addView(bar);String label=state.equals("done")?"Concluído":state.equals("sending")?"Enviando":state.equals("paused")?"Pausado":state.equals("error")?"Falha":"Na fila";long end=job.optLong("finished",System.currentTimeMillis());double speed=job.optDouble("speed",0);String estimate=speed>0&&state.equals("sending")?" · cerca de "+(long)((total-sent)/speed)+" s restantes":"";card.addView(text(percent+"% · "+size(sent)+" / "+size(total)+" · "+label+"\nTempo: "+duration(end-job.optLong("started",end))+estimate,13,MUTED));if(state.equals("error"))card.addView(text(job.optString("error"),13,0xffa04d35));}if(!any){LinearLayout empty=card(queueView);empty.addView(text("Tudo pronto para enviar",18,GREEN));empty.addView(text("Escolha arquivos acima ou compartilhe direto da galeria.",14,MUTED));}}
-    final Runnable tick=new Runnable(){public void run(){if(receiving!=null)receiving.setText(ReceiveService.running?"Recebimento ativado • desativar":"Receber arquivos neste celular");if(currentTab==0)renderQueue();timer.postDelayed(this,1000);}};
+    void updateReceiving(){if(receiving==null)return;boolean active=ReceiveService.running;receiving.setContentDescription(active?"Desativar recebimento":"Ativar recebimento");receiving.setTooltipText(receiving.getContentDescription());receiving.setImageDrawable(new ActionIcon(active?"check":"bell",active?Color.WHITE:GREEN));receiving.setBackground(rounded(active?GREEN:0xffedf2e7,14));}
+    final Runnable tick=new Runnable(){public void run(){updateReceiving();if(currentTab==0)renderQueue();timer.postDelayed(this,1000);}};
     void loadFiles(){if(prefs().getString("token","").isEmpty())return;String path=folder;io.execute(()->{try{JSONObject response=Api.request(prefs().getString("host",""),prefs().getString("token",""),"GET","/api/files?path="+Uri.encode(path),null);runOnUiThread(()->renderFiles(response.optJSONArray("items"),path));}catch(Exception e){message(e.getMessage());}});}
     void renderFiles(JSONArray files,String path) {
         if(!folder.equals(path))return;
@@ -174,11 +183,12 @@ public class MainActivity extends Activity {
             JSONObject file=files.optJSONObject(i);if(file==null)continue;
             LinearLayout row=card(fileView);boolean dir=file.optBoolean("directory");
             row.addView(text(dir?"PASTA":"ARQUIVO • "+size(file.optLong("size")),11,MUTED));
-            TextView name=text(file.optString("name"),18,GREEN);name.setTypeface(null,android.graphics.Typeface.BOLD);row.addView(name);
-            if(dir)row.addView(button("Abrir pasta",()->{folder=file.optString("path");loadFiles();}));
-            LinearLayout actions=new LinearLayout(this);
-            actions.addView(button(dir?"Baixar ZIP":"Baixar",()->download(file)),new LinearLayout.LayoutParams(0,-2,1));
-            Button remove=button("Apagar",()->confirmDelete(file));remove.setTextColor(0xffa34536);actions.addView(remove,new LinearLayout.LayoutParams(0,-2,1));row.addView(actions);
+            LinearLayout fileLine=new LinearLayout(this);fileLine.setGravity(Gravity.CENTER_VERTICAL);
+            TextView name=text(file.optString("name"),17,GREEN);name.setTypeface(null,android.graphics.Typeface.BOLD);name.setMaxLines(2);name.setEllipsize(android.text.TextUtils.TruncateAt.END);
+            fileLine.addView(name,new LinearLayout.LayoutParams(0,-2,1));
+            if(dir)fileLine.addView(iconButton("Abrir pasta "+file.optString("name"),"open",()->{folder=file.optString("path");loadFiles();}),iconSpace());
+            fileLine.addView(iconButton((dir?"Baixar ZIP de ":"Baixar ")+file.optString("name"),"download",()->download(file)),iconSpace());
+            ImageButton remove=iconButton("Apagar "+file.optString("name"),"delete",()->confirmDelete(file));remove.setImageDrawable(new ActionIcon("delete",0xffa34536));fileLine.addView(remove,iconSpace());row.addView(fileLine);
         }
     }
     void confirmDelete(JSONObject file) {

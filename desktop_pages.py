@@ -99,6 +99,7 @@ class DesktopPages:
         ttk.Button(actions,text='Abrir pasta',command=self.open_selected).pack(side='left')
         self.save_button=ttk.Button(actions,text='Salvar no computador',style='Primary.TButton',command=self.save_selected);self.save_button.pack(side='left',padx=6)
         ttk.Button(actions,text='Apagar da rede',style='Danger.TButton',command=self.delete_selected).pack(side='left')
+        ttk.Button(actions,text='QR rápido',command=self.quick_share_selected).pack(side='left',padx=6)
         ttk.Button(actions,text='Cancelar download',command=self.cancel_download.set).pack(side='right')
         self.file_status=ttk.Label(self.files,text='');self.file_status.pack(anchor='w')
         self.download_progress=ttk.Progressbar(self.files,maximum=100);self.download_progress.pack(fill='x',pady=(6,0))
@@ -148,6 +149,46 @@ class DesktopPages:
         if not messagebox.askyesno('Apagar da rede?',f'{item["name"]}\n\n{detail} será apagado permanentemente da rede. A cópia no dispositivo de origem é mantida.',parent=self.root):return
         self.run(lambda:self.api.request('DELETE','/api/files',{'path':item['path']}),lambda _:self.load_files())
 
+    def quick_share_selected(self):
+        item=self.selection()
+        if not item:return
+        if item['directory']:
+            messagebox.showinfo('QR rápido','Escolha um arquivo. Pastas ainda não podem ser compartilhadas por QR Code.',parent=self.root)
+            return
+        self.run(lambda:self.api.request('POST','/api/quick-share',{'path':item['path']}),
+                 lambda data:self.show_quick_share(item,data))
+
+    def show_quick_share(self,item,data):
+        import qrcode
+        from PIL import ImageTk
+        import datetime
+        popup=tk.Toplevel(self.root);popup.title('QR rápido · DropAgíl');popup.configure(bg='#f5f7f2')
+        popup.transient(self.root);popup.resizable(False,False)
+        panel=ttk.Frame(popup,padding=22);panel.pack(fill='both',expand=True)
+        ttk.Label(panel,text='Compartilhar sem configurar',font=('Segoe UI',17,'bold')).pack(anchor='w')
+        ttk.Label(panel,text=item['name'],wraplength=390).pack(anchor='w',pady=(6,10))
+        url=tk.StringVar(value=data['urls'][0])
+        qr=ttk.Label(panel);qr.pack(pady=8)
+        def refresh(*_):
+            popup.qr_image=ImageTk.PhotoImage(qrcode.make(url.get()).resize((220,220)))
+            qr.configure(image=popup.qr_image)
+        ttk.Label(panel,text='Endereço na rede').pack(anchor='w')
+        selector=ttk.Combobox(panel,textvariable=url,values=data['urls'],state='readonly',width=53)
+        selector.pack(fill='x',pady=(5,10));selector.bind('<<ComboboxSelected>>',refresh)
+        refresh()
+        expires=datetime.datetime.fromtimestamp(data['expires']).strftime('%H:%M')
+        ttk.Label(panel,text=f'Válido até {expires}. Qualquer pessoa com o QR Code pode baixar este arquivo.',
+                  wraplength=390,foreground='#687b64').pack(anchor='w',pady=(2,12))
+        buttons=ttk.Frame(panel);buttons.pack(fill='x')
+        def copy():
+            self.root.clipboard_clear();self.root.clipboard_append(url.get())
+        ttk.Button(buttons,text='Copiar link',command=copy).pack(side='left')
+        ttk.Button(buttons,text='Encerrar link',style='Danger.TButton',
+                   command=lambda:self.run(lambda:self.api.request('DELETE','/api/quick-share/'+data['token']),
+                                           lambda _:popup.destroy())).pack(side='left',padx=7)
+        ttk.Button(buttons,text='Fechar',command=popup.destroy).pack(side='right')
+        popup.grab_set();popup.lift();popup.focus_force()
+
     def build_devices(self):
         self.title(self.device_page,'Escolha pelo nome.','Renomeie os dispositivos para reconhecer o destino de cada envio.')
         self.device_table=ttk.Treeview(self.device_page,columns=('identity',),selectmode='browse')
@@ -186,7 +227,7 @@ class DesktopPages:
         ttk.Label(self.connection,text='Integração com Windows',font=('Segoe UI',15,'bold')).pack(anchor='w')
         ttk.Label(self.connection,text='Início automático e dois atalhos no botão direito: Rede e Dispositivo.').pack(anchor='w',pady=8)
         ttk.Button(self.connection,text='Ativar / atualizar integração',command=lambda:self.run(install,lambda _:messagebox.showinfo('DropAgíl','Integração atualizada. No Windows 11, veja também Mostrar mais opções.',parent=self.root))).pack(anchor='w')
-        ttk.Label(self.connection,text='Envios concluídos desaparecem da fila após 30 segundos. Os arquivos são mantidos.\nFechar a janela mantém o DropAgíl na bandeja. Versão 4.0.',foreground='#687b64').pack(anchor='w',pady=20)
+        ttk.Label(self.connection,text='Envios concluídos desaparecem da fila após 30 segundos. Os arquivos são mantidos.\nFechar a janela mantém o DropAgíl na bandeja. Versão 4.3.',foreground='#687b64').pack(anchor='w',pady=20)
     def copy_address(self):self.root.clipboard_clear();self.root.clipboard_append(self.address.get())
     def load_connection(self):
         def show(data):

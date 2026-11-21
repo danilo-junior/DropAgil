@@ -74,6 +74,7 @@ class DesktopQueue:
     def add(self, paths, target=''):
         with self.guard:
             batch = next((j.get('batch',j['id']) for j in self.jobs if j['state'] not in ('done','cancelled')),secrets.token_hex(8))
+            added = 0
             for raw in dict.fromkeys(paths):
                 source = Path(raw).resolve()
                 if not source.exists() or source.is_symlink():
@@ -81,8 +82,10 @@ class DesktopQueue:
                 if source.is_relative_to((BASE / 'Recebidos').resolve()):
                     continue
                 self.jobs.append({'id':secrets.token_hex(8),'batch':batch,'source':str(source),'name':source.name,'folder':source.is_dir(),'state':'queued','items':None,'total':0,'sent':0,'started':None,'finished':None,'error':'','speed':0,'target':target})
+                added += 1
             self.persist()
         self.changed.set()
+        return added
 
     def snapshot(self):
         with self.guard:
